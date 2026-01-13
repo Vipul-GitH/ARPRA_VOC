@@ -1,0 +1,479 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card p-5 space-y-4">
+    <div class="flex items-center justify-between">
+        <div>
+            <p class="text-xs uppercase tracking-wide text-[var(--primary,#054e5d)] font-semibold">Library</p>
+            <h2 class="text-xl font-bold">Master Questions</h2>
+        </div>
+    </div>
+
+    <div class="bg-white p-4 rounded shadow border border-gray-200">
+        <h3 class="text-lg font-semibold mb-2">Add Master Question</h3>
+        <form method="post" action="/master_questions/new" class="space-y-3" id="new-master-form">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+                <div>
+                    <label class="block text-sm font-semibold">Code</label>
+                    <input type="text" name="code" class="w-full border rounded px-3 py-2" placeholder="NPS_OVERALL" required>
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-semibold">Question text</label>
+                    <input type="text" name="question_text_en" class="w-full border rounded px-3 py-2" placeholder="How likely are you to recommend us?" required>
+                </div>
+                <div class="md:col-span-2 hidden" id="master-text-placeholder">
+                    <label class="block text-sm font-semibold">Answer placeholder (text type)</label>
+                    <input type="text" name="placeholder_en" class="w-full border rounded px-3 py-2" placeholder="Type your response here">
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold">Type</label>
+                    <select name="question_type" id="master_question_type" class="w-full border rounded px-3 py-2">
+                        <option value="text">Text</option>
+                        <option value="mcq_single">Single Choice</option>
+                        <option value="mcq_multi">Multi Choice</option>
+                        <option value="rating_1_5">Rating 1-5</option>
+                    </select>
+                </div>
+            </div>
+
+            <div id="master-option-builder" class="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-2">
+                <div class="flex items-center justify-between">
+                    <p class="text-xs uppercase tracking-wide text-gray-600 font-semibold">Options (for choice/rating)</p>
+                    <button type="button" id="add-master-option-row" class="px-2 py-1 text-xs rounded bg-white border border-gray-300 hover:border-teal-700">+ Add option</button>
+                </div>
+                <div id="master-option-rows" class="space-y-2">
+                    {% for i in range(2) %}
+                    <div class="grid grid-cols-1 md:grid-cols-5 gap-2 option-row">
+                        <input type="text" name="option_text_en" placeholder="Label" class="border rounded px-2 py-1 md:col-span-2">
+                        <input type="text" name="option_value" placeholder="Value" class="border rounded px-2 py-1">
+                        <select name="sentiment" class="border rounded px-2 py-1">
+                            <option value="positive">Positive</option>
+                            <option value="neutral" selected>Neutral</option>
+                            <option value="negative">Negative</option>
+                        </select>
+                        <input type="number" name="score_value" value="0" class="border rounded px-2 py-1" placeholder="Score">
+                        <button type="button" class="remove-option px-2 py-1 text-xs text-rose-600 border border-rose-200 rounded">Remove</button>
+                    </div>
+                    {% endfor %}
+                </div>
+                <p class="text-xs text-gray-500">Options are used only for choice/rating questions. Values default to 1..N if left blank.</p>
+            </div>
+            <div class="flex justify-end">
+                <button class="btn-primary">Create</button>
+            </div>
+        </form>
+    </div>
+
+    {% if masters %}
+    <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+            <span class="text-sm text-gray-500">Total: {{ masters|length }}</span>
+            <button type="button" id="expand-all" class="px-3 py-1 text-xs rounded border border-gray-300 hover:border-teal-700">Expand all</button>
+            <button type="button" id="collapse-all" class="px-3 py-1 text-xs rounded border border-gray-300 hover:border-teal-700">Collapse all</button>
+        </div>
+    </div>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4" style="max-height: 720px; overflow: auto; padding-right: 4px;">
+        {% for m in masters %}
+        <div class="bg-white p-4 rounded shadow border border-gray-100 space-y-3 question-card" data-master-id="{{ m.id }}">
+            <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0">
+                    <p class="text-xs uppercase tracking-wide text-gray-500">{{ m.code }}</p>
+                    <p class="text-sm font-semibold text-gray-900" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px;">
+                        {{ m.default_text_en }}
+                    </p>
+                    <div class="flex flex-wrap gap-2 mt-1 text-xs">
+                        <span class="px-2 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-100">Type: {{ m.question_type }}</span>
+                        <span class="px-2 py-0.5 rounded bg-gray-100 text-gray-700 border border-gray-200">Options: {{ m.options|length }}</span>
+                        <span class="px-2 py-0.5 rounded {% if m.is_active %}bg-emerald-50 text-emerald-700 border border-emerald-100{% else %}bg-gray-50 text-gray-700 border border-gray-200{% endif %}">{% if m.is_active %}Active{% else %}Inactive{% endif %}</span>
+                    </div>
+                </div>
+                <button type="button" class="toggle-question px-3 py-1 rounded border border-gray-300 text-xs hover:border-teal-700" data-target="m-body-{{ m.id }}">Expand</button>
+            </div>
+            <div id="m-body-{{ m.id }}" class="q-body hidden space-y-3">
+                <div class="save-status text-xs text-emerald-700"></div>
+                <form method="post" action="/master_questions/{{ m.id }}/update" class="space-y-2 master-question-form">
+                    <div class="flex items-start justify-between">
+                        <div class="w-full pr-3">
+                            <input type="text" name="question_text_en" value="{{ m.default_text_en }}" class="w-full border rounded px-2 py-1 text-sm" required>
+                            <div class="mt-2 hidden placeholder-wrap">
+                                <label class="block text-xs font-semibold text-gray-700">Answer placeholder (text type)</label>
+                                <input type="text" name="placeholder_en" value="{{ m.placeholder_en or '' }}" class="w-full border rounded px-2 py-1 text-xs" placeholder="Type your response here">
+                            </div>
+                        </div>
+                        <div class="flex flex-col items-end space-y-2">
+                            <select name="question_type" class="border rounded px-2 py-1 text-xs">
+                                <option value="text" {% if m.question_type=='text' %}selected{% endif %}>Text</option>
+                                <option value="mcq_single" {% if m.question_type=='mcq_single' %}selected{% endif %}>Single choice</option>
+                                <option value="mcq_multi" {% if m.question_type=='mcq_multi' %}selected{% endif %}>Multi choice</option>
+                                <option value="rating_1_5" {% if m.question_type=='rating_1_5' %}selected{% endif %}>Rating 1-5</option>
+                            </select>
+                            <label class="inline-flex items-center space-x-1 text-xs text-gray-700">
+                                <input type="checkbox" name="is_active" class="h-4 w-4 text-emerald-600" {% if m.is_active %}checked{% endif %}>
+                                <span>Active</span>
+                            </label>
+                            <div class="flex space-x-2">
+                                <button class="bg-indigo-600 text-white px-3 py-1 rounded shadow-sm text-xs">Save</button>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+                <div class="flex justify-between items-center">
+                    <p class="text-xs text-gray-500">Options (for choice/rating):</p>
+                    <form method="post" action="/master_questions/{{ m.id }}/delete" onsubmit="return confirm('Delete this master question?');">
+                        <button class="text-rose-600 text-xs underline">Delete</button>
+                    </form>
+                </div>
+                <form method="post" action="/master_questions/{{ m.id }}/options/add" class="master-option-form space-y-2" data-master-id="{{ m.id }}">
+                    <div id="opt-rows-{{ m.id }}" class="space-y-2">
+                        {% for i in range(2) %}
+                        <div class="grid grid-cols-1 md:grid-cols-5 gap-2 text-xs option-row">
+                            <input type="text" name="option_text_en" placeholder="Label" class="border rounded px-2 py-1 md:col-span-2">
+                            <input type="text" name="option_value" placeholder="Value" class="border rounded px-2 py-1">
+                            <select name="sentiment" class="border rounded px-2 py-1">
+                                <option value="positive">Positive</option>
+                                <option value="neutral" selected>Neutral</option>
+                                <option value="negative">Negative</option>
+                            </select>
+                            <input type="number" name="score_value" value="0" class="border rounded px-2 py-1" placeholder="Score">
+                            <button type="button" class="remove-option px-2 py-1 text-xs text-rose-600 border border-rose-200 rounded">Remove</button>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <button type="button" class="px-2 py-1 text-xs rounded border border-gray-300 hover:border-teal-700 add-master-option" data-target="opt-rows-{{ m.id }}">+ Add option</button>
+                        <button class="bg-indigo-600 text-white px-3 py-1 rounded shadow-sm">Save options</button>
+                    </div>
+                </form>
+                <div class="flex flex-col gap-2">
+                    {% for o in m.options %}
+                        <div class="grid grid-cols-1 md:grid-cols-6 gap-2 items-center text-xs bg-gray-50 px-2 py-1 rounded">
+                            <form method="post" action="/master_questions/{{ m.id }}/options/{{ o.id }}/update" class="contents option-update-form">
+                                <input type="text" name="option_text_en" value="{{ o.option_text_en }}" class="border rounded px-2 py-1 md:col-span-2" required>
+                                <input type="text" name="option_value" value="{{ o.option_value }}" class="border rounded px-2 py-1" required>
+                                <select name="sentiment" class="border rounded px-2 py-1">
+                                    <option value="positive" {% if o.sentiment=='positive' %}selected{% endif %}>Positive</option>
+                                    <option value="neutral" {% if o.sentiment=='neutral' %}selected{% endif %}>Neutral</option>
+                                    <option value="negative" {% if o.sentiment=='negative' %}selected{% endif %}>Negative</option>
+                                </select>
+                                <input type="number" name="score_value" value="{{ o.score_value or 0 }}" class="border rounded px-2 py-1" placeholder="Score">
+                                <div class="flex space-x-2">
+                                    <button class="bg-emerald-600 text-white px-3 py-1 rounded shadow-sm">Save</button>
+                                </div>
+                            </form>
+                            <form method="post" action="/master_questions/{{ m.id }}/options/{{ o.id }}/delete" class="md:col-span-1 flex justify-end" onsubmit="return confirm('Delete this option?');">
+                                <button class="text-rose-600 underline px-2 py-1">Delete</button>
+                            </form>
+                        </div>
+                    {% endfor %}
+                    {% if not m.options %}
+                        <span class="text-xs text-gray-400">No options yet</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="bg-white p-4 rounded shadow text-gray-500 text-sm">No master questions yet.</div>
+    {% endif %}
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const typeSelect = document.getElementById('master_question_type');
+        const optionBuilder = document.getElementById('master-option-builder');
+        const rows = document.getElementById('master-option-rows');
+        const addBtn = document.getElementById('add-master-option-row');
+        const newForm = document.getElementById('new-master-form');
+        const placeholderWrap = document.getElementById('master-text-placeholder');
+        const placeholderInput = placeholderWrap ? placeholderWrap.querySelector('input[name="placeholder_en"]') : null;
+
+        function toggleOptions() {
+            const val = typeSelect.value || '';
+            const show = val.startsWith('mcq') || val.startsWith('rating');
+            optionBuilder.classList.toggle('hidden', !show);
+            const isText = val === 'text';
+            if (placeholderWrap) placeholderWrap.classList.toggle('hidden', !isText);
+            if (!isText && placeholderInput) placeholderInput.value = '';
+        }
+
+        function addRow() {
+            const template = rows.querySelector('.option-row');
+            if (!template) return;
+            const clone = template.cloneNode(true);
+            clone.querySelectorAll('input').forEach(el => el.value = '');
+            clone.querySelectorAll('select').forEach(el => el.value = 'neutral');
+            rows.appendChild(clone);
+            bindRemove(clone);
+        }
+
+        function bindRemove(row) {
+            const btn = row.querySelector('.remove-option');
+            if (!btn) return;
+            btn.addEventListener('click', () => {
+                if (rows.children.length > 1) row.remove();
+                else row.querySelectorAll('input').forEach(el => el.value = '');
+            });
+        }
+
+        Array.from(rows.children).forEach(bindRemove);
+        addBtn.addEventListener('click', addRow);
+        typeSelect.addEventListener('change', toggleOptions);
+        toggleOptions();
+
+        if (newForm) {
+            newForm.addEventListener('submit', (e) => {
+                const val = typeSelect.value || '';
+                const needsOptions = val.startsWith('mcq') || val.startsWith('rating');
+                if (!needsOptions) return;
+                const texts = Array.from(rows.querySelectorAll('input[name="option_text_en"]'))
+                    .map(el => (el.value || '').trim())
+                    .filter(Boolean);
+                if (!texts.length) {
+                    e.preventDefault();
+                    alert('Please add at least one option for this question type.');
+                }
+            });
+        }
+    });
+</script>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const cards = document.querySelectorAll('.question-card');
+        const expandAll = document.getElementById('expand-all');
+        const collapseAll = document.getElementById('collapse-all');
+        const optionForms = document.querySelectorAll('.master-option-form');
+
+        function bindOptionForm(form) {
+            const targetId = form.querySelector('.add-master-option')?.dataset.target;
+            const rows = targetId ? document.getElementById(targetId) : null;
+            const addBtn = form.querySelector('.add-master-option');
+            if (!rows || !addBtn) return;
+
+            function addRow() {
+                const template = rows.querySelector('.option-row');
+                if (!template) return;
+                const clone = template.cloneNode(true);
+                clone.querySelectorAll('input').forEach(el => el.value = '');
+                clone.querySelectorAll('select').forEach(el => el.value = 'neutral');
+                rows.appendChild(clone);
+                bindRemove(clone);
+            }
+
+            function bindRemove(row) {
+                const btn = row.querySelector('.remove-option');
+                if (!btn) return;
+                btn.addEventListener('click', () => {
+                    if (rows.children.length > 1) row.remove();
+                    else {
+                        row.querySelectorAll('input').forEach(el => el.value = '');
+                        row.querySelectorAll('select').forEach(el => el.value = 'neutral');
+                    }
+                });
+            }
+
+            Array.from(rows.children).forEach(bindRemove);
+            addBtn.addEventListener('click', addRow);
+        }
+
+        optionForms.forEach(bindOptionForm);
+
+        function setCard(card, expanded) {
+            const btn = card.querySelector('.toggle-question');
+            const targetId = btn ? btn.dataset.target : null;
+            const body = targetId ? document.getElementById(targetId) : null;
+            if (!body) return;
+            body.classList.toggle('hidden', !expanded);
+            if (btn) btn.textContent = expanded ? 'Collapse' : 'Expand';
+        }
+
+        cards.forEach((card) => {
+            const btn = card.querySelector('.toggle-question');
+            if (!btn) return;
+            btn.addEventListener('click', () => {
+                const target = document.getElementById(btn.dataset.target);
+                const isHidden = target ? target.classList.contains('hidden') : true;
+                setCard(card, isHidden);
+            });
+            setCard(card, false);
+        });
+
+        if (expandAll) expandAll.addEventListener('click', () => cards.forEach(c => setCard(c, true)));
+        if (collapseAll) collapseAll.addEventListener('click', () => cards.forEach(c => setCard(c, false)));
+    });
+</script>
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const postForm = async (form) => {
+            const fd = new FormData(form);
+            const res = await fetch(form.action, { method: 'POST', body: fd, headers: { Accept: 'application/json' } });
+            if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+            const ct = res.headers.get('content-type') || '';
+            if (ct.includes('application/json')) return res.json();
+            return null;
+        };
+
+        const setStatus = (card, message, type = 'success') => {
+            const el = card.querySelector('.save-status');
+            if (!el) return;
+            el.textContent = message;
+            el.className = `save-status text-xs mt-1 ${type === 'error' ? 'text-rose-600' : 'text-emerald-700'}`;
+            setTimeout(() => { el.textContent = ''; }, 2000);
+        };
+
+        const validateOptionRows = (form) => {
+            const rows = form ? form.querySelectorAll('.option-row') : [];
+            return Array.from(rows).some(r => (r.querySelector('input[name=\"option_text_en\"]')?.value || '').trim());
+        };
+
+        // New master creation (question + options) without reload
+        const newForm = document.getElementById('new-master-form');
+        if (newForm) {
+            const rows = document.getElementById('master-option-rows');
+            const placeholderInput = newForm.querySelector('input[name=\"placeholder_en\"]');
+            newForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const btn = newForm.querySelector('button[type=\"submit\"], button:not([type])');
+                const typeSelect = document.getElementById('master_question_type');
+                const needsOptions = typeSelect && (typeSelect.value || '').startsWith('mcq');
+                if (needsOptions && !validateOptionRows(newForm)) {
+                    alert('Please add at least one option for this question type.');
+                    return;
+                }
+                if (typeSelect && typeSelect.value !== 'text' && placeholderInput) {
+                    placeholderInput.value = '';
+                }
+                if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+                try {
+                    // auto-fill option values if blank
+                    rows?.querySelectorAll('.option-row').forEach((row, idx) => {
+                        const label = row.querySelector('input[name=\"option_text_en\"]');
+                        const value = row.querySelector('input[name=\"option_value\"]');
+                        if (label && label.value.trim() && value && !value.value.trim()) value.value = String(idx + 1);
+                    });
+                    await postForm(newForm);
+                    newForm.reset();
+                    // reset rows to two empty rows
+                    if (rows) {
+                        const first = rows.firstElementChild;
+                        rows.innerHTML = '';
+                        for (let i = 0; i < 2; i++) {
+                            const clone = first ? first.cloneNode(true) : null;
+                            if (!clone) break;
+                            clone.querySelectorAll('input').forEach(el => el.value = '');
+                            clone.querySelectorAll('select').forEach(el => el.value = 'neutral');
+                            rows.appendChild(clone);
+                        }
+                    }
+                    if (btn) { btn.textContent = 'Saved (reload to see new)'; }
+                } catch (err) {
+                    alert('Failed to create master question. Please try again.');
+                } finally {
+                    if (btn) { btn.disabled = false; setTimeout(() => btn.textContent = 'Create', 1500); }
+                }
+            });
+        }
+
+        // Inline save for existing master cards
+        document.querySelectorAll('.question-card').forEach((card) => {
+            const qForm = card.querySelector('.master-question-form');
+            const addOptForm = card.querySelector('.master-option-form');
+            const optUpdateForms = Array.from(card.querySelectorAll('.option-update-form'));
+            const typeSelect = card.querySelector('select[name="question_type"]');
+            const placeholderWrap = card.querySelector('.placeholder-wrap');
+            const placeholderInput = card.querySelector('input[name="placeholder_en"]');
+            const togglePlaceholder = () => {
+                const isText = typeSelect && typeSelect.value === 'text';
+                if (placeholderWrap) placeholderWrap.classList.toggle('hidden', !isText);
+                if (!isText && placeholderInput) placeholderInput.value = '';
+            };
+            if (typeSelect) {
+                typeSelect.addEventListener('change', togglePlaceholder);
+                togglePlaceholder();
+            }
+
+            // Save options form (new options only)
+            if (addOptForm) {
+                addOptForm.addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    if (!validateOptionRows(addOptForm)) {
+                        alert('Please add at least one option.');
+                        return;
+                    }
+                    const btn = addOptForm.querySelector('button[type=\"submit\"], button:not([type])');
+                    if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+                    try {
+                        addOptForm.querySelectorAll('.option-row').forEach((row, idx) => {
+                            const label = row.querySelector('input[name=\"option_text_en\"]');
+                            const value = row.querySelector('input[name=\"option_value\"]');
+                            if (label && label.value.trim() && value && !value.value.trim()) value.value = String(idx + 1);
+                        });
+                        await postForm(addOptForm);
+                        setStatus(card, 'Options added');
+                        addOptForm.reset();
+                    } catch (err) {
+                        setStatus(card, 'Failed to save options', 'error');
+                    } finally {
+                        if (btn) { btn.disabled = false; btn.textContent = 'Save options'; }
+                    }
+                });
+            }
+
+            // Save single option inline
+            optUpdateForms.forEach((form) => {
+                if (form.dataset.bound === 'true') return;
+                form.dataset.bound = 'true';
+                form.addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const btn = form.querySelector('button[type=\"submit\"], button:not([type])');
+                    const original = btn ? btn.textContent : '';
+                    if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+                    try {
+                        await postForm(form);
+                        setStatus(card, 'Option saved');
+                    } catch (err) {
+                        setStatus(card, 'Option save failed', 'error');
+                    } finally {
+                        if (btn) { btn.disabled = false; btn.textContent = original || 'Save'; }
+                    }
+                });
+            });
+
+            // Save question + new options + option edits in one click
+            if (qForm) {
+                const saveBtn = qForm.querySelector('button[type=\"submit\"], button:not([type])');
+                const original = saveBtn ? saveBtn.textContent : '';
+                qForm.addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving...'; }
+                    try {
+                        if (typeSelect && typeSelect.value !== 'text' && placeholderInput) {
+                            placeholderInput.value = '';
+                        }
+                        await postForm(qForm);
+
+                        if (addOptForm && validateOptionRows(addOptForm)) {
+                            addOptForm.querySelectorAll('.option-row').forEach((row, idx) => {
+                                const label = row.querySelector('input[name=\"option_text_en\"]');
+                                const value = row.querySelector('input[name=\"option_value\"]');
+                                if (label && label.value.trim() && value && !value.value.trim()) value.value = String(idx + 1);
+                            });
+                            await postForm(addOptForm);
+                            addOptForm.reset();
+                        }
+
+                        for (const f of optUpdateForms) {
+                            await postForm(f);
+                        }
+                        setStatus(card, 'Question & options saved');
+                    } catch (err) {
+                        setStatus(card, 'Save failed. Please retry.', 'error');
+                    } finally {
+                        if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = original || 'Save'; }
+                    }
+                });
+            }
+        });
+    });
+</script>
+{% endblock %}

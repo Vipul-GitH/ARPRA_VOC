@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ campaign.header_title or campaign.name }} | Dr Bhasin's Lab Feedback</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        :root { --brand: #054e5d; --accent: #57b697; --text: #000000; }
+        .flow-hidden { display: none !important; }
+        body {
+            background: radial-gradient(circle at 10% 10%, rgba(5,78,93,0.1), transparent 35%),
+                        radial-gradient(circle at 90% 20%, rgba(87,182,151,0.08), transparent 30%),
+                        #f7fafc;
+        }
+    </style>
+</head>
+<body class="min-h-screen text-[var(--text)]">
+<div class="max-w-3xl mx-auto p-4">
+        <div class="bg-white text-[var(--text)] p-5 rounded-xl shadow border border-gray-200">
+            <div class="flex items-center space-x-3">
+                <img src="/static/img/dr-bhasin-logo.png" alt="Dr Bhasin's Lab" class="h-16 w-auto object-contain" style="max-width: 180px;">
+            <div>
+                <p class="text-xs uppercase tracking-[0.18em] text-gray-500">Voice of Customer</p>
+                <h1 class="text-2xl font-bold">{{ campaign.header_title or campaign.name }}</h1>
+                <p class="text-sm text-gray-600">Estimated time: {{ campaign.estimated_fill_time_seconds }} seconds • {{ total_questions }} questions</p>
+            </div>
+        </div>
+</div>
+
+    {% if error %}
+    <div class="mt-3 bg-rose-50 border border-rose-200 text-rose-800 text-sm px-3 py-2 rounded">
+        {{ error }}
+    </div>
+    {% endif %}
+
+    <script id="flowRulesData" type="application/json">{{ flow_rules_json | safe }}</script>
+    <script id="flowMappingData" type="application/json">{{ flow_mapping_json | safe }}</script>
+    <script id="flowSourceQuestionId" type="application/json">{{ flow_source_question_id or 0 }}</script>
+    <datalist id="country-codes">
+        <option value="+91">India (+91)</option>
+        <option value="+1">USA / Canada (+1)</option>
+        <option value="+44">UK (+44)</option>
+        <option value="+61">Australia (+61)</option>
+        <option value="+65">Singapore (+65)</option>
+        <option value="+971">UAE (+971)</option>
+        <option value="+81">Japan (+81)</option>
+        <option value="+82">South Korea (+82)</option>
+        <option value="+86">China (+86)</option>
+        <option value="+852">Hong Kong (+852)</option>
+        <option value="+886">Taiwan (+886)</option>
+        <option value="+49">Germany (+49)</option>
+        <option value="+33">France (+33)</option>
+        <option value="+34">Spain (+34)</option>
+        <option value="+39">Italy (+39)</option>
+        <option value="+7">Russia (+7)</option>
+        <option value="+55">Brazil (+55)</option>
+        <option value="+52">Mexico (+52)</option>
+        <option value="+27">South Africa (+27)</option>
+        <option value="+62">Indonesia (+62)</option>
+        <option value="+60">Malaysia (+60)</option>
+        <option value="+64">New Zealand (+64)</option>
+    </datalist>
+
+    {% if campaign.layout_type == 'one_question_per_page' %}
+    <div class="mt-4 bg-white border border-gray-200 text-[var(--text)] p-5 rounded-xl shadow-sm">
+        <div class="flex items-center justify-between mb-2">
+            <div class="w-full bg-gray-100 rounded-full h-2 mr-3 overflow-hidden">
+                <div id="progressBar" class="h-2 rounded-full transition-all duration-300" style="width: calc(100% / {{ total_questions }}); background: var(--brand);"></div>
+            </div>
+            <span id="progressText" class="text-xs font-semibold text-gray-600">1 / {{ total_questions }}</span>
+        </div>
+        <form id="wizardForm" method="post" action="/feedback/{{ token }}" class="space-y-3">
+            {% for q in questions %}
+            <div class="question-step {% if not loop.first %}hidden{% endif %} space-y-3 bg-white p-4 rounded-lg border border-gray-200" data-index="{{ loop.index0 }}" data-question-id="{{ q.id }}">
+                    <div class="flex justify-between text-sm text-gray-600">
+                        <span>Q{{ loop.index }} of {{ total_questions }}</span>
+                        {% if q.is_required %}<span class="text-white font-semibold px-2 py-1 rounded-full" style="background: var(--brand);">Required</span>{% endif %}
+                    </div>
+                    <p class="font-semibold text-lg question-title">{{ q.question_text_en }}</p>
+                {% if q.question_type in ['text', 'file_upload'] %}
+                    <textarea name="q_{{ q.id }}" class="w-full border rounded px-3 py-2 bg-white text-gray-800 focus:ring-2 focus:ring-[var(--brand)]" rows="3" placeholder="{{ q.placeholder_en or '' }}" {% if q.is_required %}required{% endif %}></textarea>
+                {% elif q.question_type == 'mcq_multi' %}
+                    <div class="space-y-2">
+                    {% for o in q.options %}
+                        <div class="space-y-1">
+                            <label class="flex items-center space-x-2 bg-gray-50 px-3 py-2 rounded border border-gray-200 hover:bg-gray-100 transition">
+                                <input type="checkbox" name="q_{{ q.id }}" value="{{ o.option_value }}" class="text-[var(--brand)] followup-toggle" data-followup-target="followup_{{ q.id }}_{{ o.option_value }}">
+                                <span class="option-label">{{ o.option_text_en }}</span>
+                            </label>
+                            {% if o.follow_up_label %}
+                            <div id="followup_{{ q.id }}_{{ o.option_value }}" class="followup-box hidden">
+                                <label class="text-xs text-gray-600">{{ o.follow_up_label }}</label>
+                                <textarea name="followup_{{ q.id }}_{{ o.option_value }}" class="w-full border rounded px-2 py-1 text-sm" placeholder="{{ o.follow_up_label }}"></textarea>
+                            </div>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="space-y-2">
+                    {% for o in q.options %}
+                        <div class="space-y-1">
+                        <label class="flex items-center space-x-2 bg-gray-50 px-3 py-2 rounded border border-gray-200 hover:bg-gray-100 transition">
+                            <input type="radio" name="q_{{ q.id }}" value="{{ o.option_value }}" class="text-[var(--brand)] focus:ring-[var(--brand)] followup-toggle" data-followup-target="followup_{{ q.id }}_{{ o.option_value }}" {% if q.is_required %}required{% endif %}>
+                            <span class="option-label">{{ o.option_text_en }}</span>
+                        </label>
+                        {% if o.follow_up_label %}
+                        <div id="followup_{{ q.id }}_{{ o.option_value }}" class="followup-box hidden">
+                            <label class="text-xs text-gray-600 followup-label">{{ o.follow_up_label }}</label>
+                            <textarea name="followup_{{ q.id }}_{{ o.option_value }}" class="w-full border rounded px-2 py-1 text-sm" placeholder="{{ o.follow_up_label }}"></textarea>
+                        </div>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                    </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+            <div class="question-step space-y-3 bg-white p-4 rounded-lg border border-gray-200" data-index="{{ questions|length }}" data-question-id="0" data-personal="true">
+                <div class="flex justify-between text-sm text-gray-600">
+                    <span>Personal Information</span>
+                    <span class="text-xs text-gray-500">Required</span>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-sm font-semibold">Name *</label>
+                        <input type="text" name="resp_name" class="w-full border rounded px-3 py-2" required value="{{ prefill.name or '' }}">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-semibold">Mobile *</label>
+                        <div class="flex gap-2">
+                            <input type="text" name="resp_mobile_country" list="country-codes" value="{{ prefill.mobile_country or '+91' }}" class="w-24 border rounded px-3 py-2" placeholder="+91">
+                            <input type="text" name="resp_mobile_number" class="flex-1 border rounded px-3 py-2" required placeholder="9876543210" value="{{ prefill.mobile_number or '' }}">
+                        </div>
+                        <p class="text-xs text-gray-500 mt-1">Pick a code or type one. If India, enter 10 digits.</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold">Lab ID (optional)</label>
+                        <input type="text" name="resp_lab_id" class="w-full border rounded px-3 py-2" value="{{ prefill.lab_id or '' }}">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold">Date of visit/test (optional)</label>
+                        <input type="date" name="resp_visit_date" class="w-full border rounded px-3 py-2">
+                    </div>
+                </div>
+            </div>
+            <div class="mt-4 flex justify-between items-center">
+                <button type="button" id="prevBtn" class="px-4 py-2 rounded border font-semibold hidden transition transform hover:-translate-y-0.5" style="border:1px solid var(--brand); color: var(--brand);">Previous</button>
+                <div class="flex-1"></div>
+                <button type="button" id="nextBtn" class="px-4 py-2 rounded text-white font-semibold shadow transition transform hover:-translate-y-0.5" style="background: var(--brand);">Next</button>
+                <button type="submit" id="submitBtn" class="px-4 py-2 rounded text-white font-semibold shadow transition transform hover:-translate-y-0.5 hidden" style="background: var(--brand);">Send Feedback</button>
+            </div>
+        </form>
+    </div>
+    <script>
+        (function() {
+            const flowRules = JSON.parse(document.getElementById('flowRulesData')?.textContent || '[]');
+            const flowMap = JSON.parse(document.getElementById('flowMappingData')?.textContent || '{}');
+            const flowSourceQuestionId = Number(document.getElementById('flowSourceQuestionId')?.textContent || 0);
+            const flowEnabled = flowSourceQuestionId && Object.keys(flowMap).length > 0;
+            const steps = Array.from(document.querySelectorAll('.question-step'));
+            const progressBar = document.getElementById('progressBar');
+            const progressText = document.getElementById('progressText');
+            const prevBtn = document.getElementById('prevBtn');
+            const nextBtn = document.getElementById('nextBtn');
+            const submitBtn = document.getElementById('submitBtn');
+            const rulesByTarget = new Map();
+            flowRules.forEach(r => {
+                if (!rulesByTarget.has(r.target_question_id)) rulesByTarget.set(r.target_question_id, []);
+                rulesByTarget.get(r.target_question_id).push(r);
+            });
+            let current = 0;
+
+            function getSelectedValues(questionId) {
+                const block = document.querySelector(`[data-question-id="${questionId}"]`);
+                if (!block) return [];
+                const inputs = block.querySelectorAll(`[name="q_${questionId}"]`);
+                const vals = [];
+                inputs.forEach(input => {
+                    if ((input.type === 'radio' || input.type === 'checkbox') && input.checked) vals.push(input.value);
+                    else if ((input.type === 'text' || input.tagName === 'TEXTAREA') && input.value) vals.push(input.value);
+                });
+                return vals.map(v => v != null ? String(v) : v);
+            }
+
+            function toggleRequired(step, enable) {
+                const requiredInputs = step.querySelectorAll('[required]');
+                requiredInputs.forEach(input => {
+                    if (enable) {
+                        if (input.dataset.wasRequired === 'true') input.required = true;
+                    } else {
+                        if (input.required) input.dataset.wasRequired = 'true';
+                        input.required = false;
+                    }
+                });
+            }
+
+            function visibleSteps() {
+                return steps.filter(step => !step.classList.contains('flow-hidden'));
+            }
+
+            function applyFlow() {
+                const visibleIds = new Set();
+                const sourceSelected = flowEnabled && flowSourceQuestionId ? getSelectedValues(flowSourceQuestionId) : [];
+                const hasSourceSelection = flowEnabled && sourceSelected.length > 0;
+                if (hasSourceSelection) {
+                    sourceSelected.forEach(val => {
+                        (flowMap[String(val)] || []).forEach(id => visibleIds.add(Number(id)));
+                    });
+                }
+                steps.forEach(step => {
+                    const qid = parseInt(step.dataset.questionId, 10);
+                    const alwaysShow = step.dataset.personal === "true";
+                    const show = alwaysShow || !flowEnabled || qid === flowSourceQuestionId || !hasSourceSelection || visibleIds.has(qid);
+                    step.classList.toggle('flow-hidden', !show);
+                    toggleRequired(step, show);
+                });
+                const visible = visibleSteps();
+                if (!visible.length) return;
+                if (!visible.includes(steps[current])) {
+                    current = 0;
+                }
+                showStep(current);
+            }
+
+            function showStep(index) {
+                const visible = visibleSteps();
+                if (!visible.length) return;
+                const safeIndex = Math.max(0, Math.min(index, visible.length - 1));
+                const target = visible[safeIndex];
+                steps.forEach(step => step.classList.toggle('hidden', step !== target));
+                current = safeIndex;
+                const pct = ((current + 1) / visible.length) * 100;
+                progressBar.style.width = pct + '%';
+                progressText.textContent = (current + 1) + ' / ' + visible.length;
+                prevBtn.classList.toggle('hidden', current === 0);
+                nextBtn.classList.toggle('hidden', current === visible.length - 1);
+                submitBtn.classList.toggle('hidden', current !== visible.length - 1);
+            }
+
+            function currentValid() {
+                const visible = visibleSteps();
+                if (!visible.length) return true;
+                const step = visible[current];
+                const requiredInputs = step.querySelectorAll('[required]');
+                for (const input of requiredInputs) {
+                    if (input.type === 'radio' || input.type === 'checkbox') {
+                        const group = step.querySelectorAll(`input[name="${input.name}"]`);
+                        if (![...group].some(r => r.checked)) return false;
+                    } else if (!input.value || input.value.trim() === '') {
+                        return false;
+                    }
+                }
+                return true;
+            }
+
+            nextBtn.addEventListener('click', () => {
+                if (!currentValid()) {
+                    alert('Please answer this question before continuing.');
+                    return;
+                }
+                showStep(current + 1);
+            });
+            prevBtn.addEventListener('click', () => showStep(current - 1));
+
+            // Only recompute flow when the source question changes
+            if (flowSourceQuestionId) {
+                document.querySelectorAll(`[name="q_${flowSourceQuestionId}"]`).forEach(el => {
+                    el.addEventListener('change', applyFlow);
+                    if (el.tagName === 'TEXTAREA') el.addEventListener('keyup', applyFlow);
+                });
+            }
+
+            // follow-up toggles (single-page)
+            document.querySelectorAll('.followup-toggle').forEach(input => {
+                const targetId = input.dataset.followupTarget;
+                const target = targetId ? document.getElementById(targetId) : null;
+                if (!target) return;
+                const toggle = () => {
+                    const name = input.name;
+                    if (input.type === 'radio') {
+                        const group = document.querySelectorAll(`input[name="${name}"]`);
+                        group.forEach(r => {
+                            const tId = r.dataset.followupTarget;
+                            const t = tId ? document.getElementById(tId) : null;
+                            if (t) t.classList.add('hidden');
+                        });
+                        if (input.checked) target.classList.remove('hidden');
+                    } else if (input.type === 'checkbox') {
+                        target.classList.toggle('hidden', !input.checked);
+                    }
+                };
+                input.addEventListener('change', toggle);
+                toggle();
+            });
+
+            applyFlow();
+        })();
+    </script>
+    {% else %}
+    <form method="post" action="/feedback/{{ token }}" class="mt-4 space-y-4">
+        {% for q in questions %}
+        <div class="bg-white p-4 rounded shadow-sm border border-gray-200 question-block" data-question-id="{{ q.id }}">
+                <div class="flex justify-between text-sm text-gray-600">
+                    <span>Q{{ loop.index }} of {{ total_questions }}</span>
+                    {% if q.is_required %}<span class="text-white font-semibold px-2 py-1 rounded-full" style="background: var(--brand);">Required</span>{% endif %}
+                </div>
+                <p class="font-semibold text-lg question-title">{{ q.question_text_en }}</p>
+                {% if q.question_type in ['text', 'file_upload'] %}
+                <textarea name="q_{{ q.id }}" class="w-full border rounded px-3 py-2 bg-white focus:ring-2 focus:ring-[var(--brand)]" rows="3" placeholder="{{ q.placeholder_en or '' }}" {% if q.is_required %}required{% endif %}></textarea>
+                {% elif q.question_type == 'mcq_multi' %}
+                <div class="space-y-1">
+                {% for o in q.options %}
+                    <div class="space-y-1">
+                        <label class="flex items-center space-x-2 bg-gray-50 px-3 py-2 rounded border border-gray-200">
+                            <input type="checkbox" name="q_{{ q.id }}" value="{{ o.option_value }}" class="text-[var(--brand)] followup-toggle" data-followup-target="followup_{{ q.id }}_{{ o.option_value }}">
+                            <span class="option-label">{{ o.option_text_en }}</span>
+                        </label>
+                        {% if o.follow_up_label %}
+                        <div id="followup_{{ q.id }}_{{ o.option_value }}" class="followup-box hidden">
+                            <label class="text-xs text-gray-600 followup-label">{{ o.follow_up_label }}</label>
+                            <textarea name="followup_{{ q.id }}_{{ o.option_value }}" class="w-full border rounded px-2 py-1 text-sm" placeholder="{{ o.follow_up_label }}"></textarea>
+                        </div>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+                </div>
+            {% else %}
+                <div class="space-y-1">
+                {% for o in q.options %}
+                    <div class="space-y-1">
+                        <label class="flex items-center space-x-2 bg-gray-50 px-3 py-2 rounded border border-gray-200">
+                                <input type="radio" name="q_{{ q.id }}" value="{{ o.option_value }}" class="text-[var(--brand)] focus:ring-[var(--brand)] followup-toggle" data-followup-target="followup_{{ q.id }}_{{ o.option_value }}" {% if q.is_required %}required{% endif %}>
+                                <span class="option-label">{{ o.option_text_en }}</span>
+                        </label>
+                        {% if o.follow_up_label %}
+                        <div id="followup_{{ q.id }}_{{ o.option_value }}" class="followup-box hidden">
+                            <label class="text-xs text-gray-600 followup-label">{{ o.follow_up_label }}</label>
+                            <textarea name="followup_{{ q.id }}_{{ o.option_value }}" class="w-full border rounded px-2 py-1 text-sm" placeholder="{{ o.follow_up_label }}"></textarea>
+                        </div>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+                </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+        <div class="bg-white p-4 rounded shadow-sm border border-gray-200 space-y-3">
+            <div class="flex justify-between text-sm text-gray-600">
+                <span>Personal Information</span>
+                <span class="text-xs text-gray-500">Required</span>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-sm font-semibold">Name *</label>
+                    <input type="text" name="resp_name" class="w-full border rounded px-3 py-2" required>
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-semibold">Mobile *</label>
+                    <div class="flex gap-2">
+                        <input type="text" name="resp_mobile_country" list="country-codes" value="+91" class="w-24 border rounded px-3 py-2" placeholder="+91">
+                        <input type="text" name="resp_mobile_number" class="flex-1 border rounded px-3 py-2" required placeholder="9876543210">
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">Pick a code or type one. If India, enter 10 digits.</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold">Lab ID (optional)</label>
+                    <input type="text" name="resp_lab_id" class="w-full border rounded px-3 py-2">
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold">Date of visit/test (optional)</label>
+                    <input type="date" name="resp_visit_date" class="w-full border rounded px-3 py-2">
+                </div>
+            </div>
+        </div>
+        <button type="submit" class="w-full text-white py-3 rounded-lg shadow font-semibold transition transform hover:-translate-y-0.5" style="background: var(--brand);">Send Feedback</button>
+    </form>
+    <script>
+        (function() {
+            const flowRules = JSON.parse(document.getElementById('flowRulesData')?.textContent || '[]');
+            const flowMap = JSON.parse(document.getElementById('flowMappingData')?.textContent || '{}');
+            const flowSourceQuestionId = Number(document.getElementById('flowSourceQuestionId')?.textContent || 0);
+            const flowEnabled = flowSourceQuestionId && Object.keys(flowMap).length > 0;
+            const rulesByTarget = new Map();
+            flowRules.forEach(r => {
+                if (!rulesByTarget.has(r.target_question_id)) rulesByTarget.set(r.target_question_id, []);
+                rulesByTarget.get(r.target_question_id).push(r);
+            });
+            const blocks = Array.from(document.querySelectorAll('.question-block'));
+
+            function getSelectedValues(questionId) {
+                const block = document.querySelector(`[data-question-id="${questionId}"]`);
+                if (!block) return [];
+                const inputs = block.querySelectorAll(`[name="q_${questionId}"]`);
+                const vals = [];
+                inputs.forEach(input => {
+                    if ((input.type === 'radio' || input.type === 'checkbox') && input.checked) vals.push(input.value);
+                    else if ((input.type === 'text' || input.tagName === 'TEXTAREA') && input.value) vals.push(input.value);
+                });
+                return vals.map(v => v != null ? String(v) : v);
+            }
+
+            function toggleRequired(block, enable) {
+                const requiredInputs = block.querySelectorAll('[required]');
+                requiredInputs.forEach(input => {
+                    if (enable) {
+                        if (input.dataset.wasRequired === 'true') input.required = true;
+                    } else {
+                        if (input.required) input.dataset.wasRequired = 'true';
+                        input.required = false;
+                    }
+                });
+            }
+
+            function applyFlow() {
+                const visibleIds = new Set();
+                const sourceSelected = flowEnabled && flowSourceQuestionId ? getSelectedValues(flowSourceQuestionId) : [];
+                const hasSourceSelection = flowEnabled && sourceSelected.length > 0;
+                if (hasSourceSelection) {
+                    sourceSelected.forEach(val => {
+                        (flowMap[String(val)] || []).forEach(id => visibleIds.add(Number(id)));
+                    });
+                }
+                blocks.forEach(block => {
+                    const qid = parseInt(block.dataset.questionId, 10);
+                    const show = !flowEnabled || qid === flowSourceQuestionId || !hasSourceSelection || visibleIds.has(qid);
+                    block.classList.toggle('flow-hidden', !show);
+                    toggleRequired(block, show);
+                });
+            }
+
+            // Only re-run flow when the source question is answered
+            if (flowSourceQuestionId) {
+                document.querySelectorAll(`[name="q_${flowSourceQuestionId}"]`).forEach(el => {
+                    el.addEventListener('change', applyFlow);
+                    if (el.tagName === 'TEXTAREA') el.addEventListener('keyup', applyFlow);
+                });
+            }
+
+            // follow-up toggles (wizard)
+            document.querySelectorAll('.followup-toggle').forEach(input => {
+                const targetId = input.dataset.followupTarget;
+                const target = targetId ? document.getElementById(targetId) : null;
+                if (!target) return;
+                const toggle = () => {
+                    if (input.type === 'radio') {
+                        const group = document.querySelectorAll(`input[name="${input.name}"]`);
+                        group.forEach(r => {
+                            const tId = r.dataset.followupTarget;
+                            const t = tId ? document.getElementById(tId) : null;
+                            if (t) t.classList.add('hidden');
+                        });
+                        if (input.checked) target.classList.remove('hidden');
+                    } else if (input.type === 'checkbox') {
+                        target.classList.toggle('hidden', !input.checked);
+                    }
+                };
+                input.addEventListener('change', toggle);
+                toggle();
+            });
+
+            applyFlow();
+        })();
+    </script>
+    {% endif %}
+</div>
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const toTitleCase = (str) => str.replace(/\b\w+/g, word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
+        const applyText = (selector) => {
+            document.querySelectorAll(selector).forEach(el => {
+                const txt = (el.textContent || '').trim();
+                if (!txt) return;
+                const next = toTitleCase(txt);
+                if (next !== txt) el.textContent = next;
+            });
+        };
+        const applyPlaceholder = (selector) => {
+            document.querySelectorAll(selector).forEach(el => {
+                const ph = el.getAttribute('placeholder');
+                if (!ph) return;
+                const next = toTitleCase(ph);
+                if (next !== ph) el.setAttribute('placeholder', next);
+            });
+        };
+
+        applyText('.question-title');
+        applyText('.option-label');
+        applyText('.followup-label');
+        applyPlaceholder('.followup-box textarea');
+    });
+</script>
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const params = new URLSearchParams(window.location.search);
+        const name = params.get('name');
+        const mobile = params.get('mobile');
+        const country = params.get('country') || '+91';
+        const today = new Date().toISOString().slice(0, 10);
+        const fill = (selector, value) => {
+            if (!value) return;
+            document.querySelectorAll(selector).forEach(el => {
+                if (!el.value) el.value = value;
+            });
+            };
+        fill('input[name="resp_name"]', name);
+        fill('input[name="resp_mobile_number"]', mobile);
+        fill('input[name="resp_mobile_country"]', country ? (country.startsWith('+') ? country : '+' + country) : null);
+        const visitDate = document.querySelector('input[name="resp_visit_date"]');
+        if (visitDate && !visitDate.value) visitDate.value = today;
+    });
+</script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+{% if error %}
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        Swal.fire({
+            icon: 'error',
+            title: 'Please check your details',
+            text: "{{ error }}",
+            confirmButtonColor: '#054e5d'
+        });
+    });
+</script>
+{% endif %}
+</body>
+</html>

@@ -1,0 +1,108 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="flex justify-between items-center mb-4">
+    <div>
+        <p class="text-xs uppercase text-indigo-600 font-semibold">Campaigns</p>
+        <h2 class="text-2xl font-bold">Your feedback funnels</h2>
+        <p class="text-sm text-gray-600">Edit, preview, and grab the live links to share.</p>
+    </div>
+    <a href="/campaigns/new" class="text-white px-4 py-2 rounded-lg shadow font-semibold hover:opacity-90" style="background:#054e5d;">+ New Campaign</a>
+</div>
+
+<style>
+@media (max-width: 640px) {
+    .card-grid { grid-template-columns: 1fr !important; gap: 12px !important; }
+    .campaign-card { padding: 12px !important; }
+    .card-actions { flex-wrap: wrap; gap: 8px !important; justify-content: flex-start; }
+}
+</style>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 card-grid">
+{% set base_public_host = "https://labmate.bhasinpathlabs.com:4667" %}
+{% for c in campaigns %}
+    {% set public_link = "/feedback/" ~ (c.code if c.code else c.id) %}
+    {% set full_public_link = base_public_host ~ public_link %}
+    <div class="bg-white rounded-xl shadow border border-indigo-50 p-4 space-y-3 campaign-card">
+        <div class="flex items-start justify-between">
+            <div>
+                <p class="text-xs uppercase text-gray-500">Code: {{ c.code }}</p>
+                <h3 class="text-lg font-semibold text-gray-900">{{ c.name }}</h3>
+                <p class="text-sm text-gray-600">{{ c.description if c.description else 'No description' }}</p>
+            </div>
+            <span class="px-2 py-1 text-xs font-semibold rounded-full
+                {% if c.status == 'live' or c.status == 'active' %}bg-emerald-50 text-emerald-700
+                {% elif c.status == 'draft' %}bg-amber-50 text-amber-700
+                {% else %}bg-indigo-50 text-indigo-700{% endif %}">
+                {{ c.status|capitalize }}
+            </span>
+        </div>
+        <div class="flex flex-wrap gap-2 text-xs">
+            <span class="px-2 py-1 rounded bg-indigo-50 text-indigo-700 font-semibold">Type: {{ c.campaign_type }}</span>
+            <span class="px-2 py-1 rounded bg-sky-50 text-sky-700 font-semibold">Layout: {{ c.layout_type }}</span>
+            <span class="px-2 py-1 rounded bg-emerald-50 text-emerald-700 font-semibold">Questions: {{ c.questions|length }}</span>
+        </div>
+        <div class="bg-gray-50 border border-gray-100 rounded p-3">
+            <p class="text-xs uppercase text-gray-500 font-semibold">Live link</p>
+            <a href="{{ full_public_link }}" target="_blank" class="text-indigo-700 font-semibold break-all hover:underline">{{ full_public_link }}</a>
+        </div>
+        <div class="flex justify-between items-center text-sm card-actions">
+            <div class="space-x-2 flex items-center">
+                <a href="/campaigns/{{ c.id }}/edit" class="text-indigo-700 font-semibold hover:underline">Edit</a>
+                <a href="/questionnaire/{{ c.id }}" class="text-emerald-700 font-semibold hover:underline">Questions</a>
+                <form method="post" action="/campaigns/{{ c.id }}/copy" class="inline">
+                    <button class="px-3 py-1.5 rounded-lg text-white font-semibold shadow-sm" style="background:#0b5568;">Copy</button>
+                </form>
+                <form method="post" action="/campaigns/{{ c.id }}/delete" class="inline" onsubmit="return confirm('Delete this campaign and all its data?');">
+                    <button class="px-3 py-1.5 rounded-lg text-white font-semibold shadow-sm" style="background:#e11d48;">Delete</button>
+                </form>
+            </div>
+            <div class="flex items-center gap-2">
+                <button type="button" class="px-3 py-1.5 rounded-lg text-white font-semibold shadow-sm qr-btn" style="background: var(--primary, #054e5d);" data-link="{{ full_public_link }}" data-name="{{ c.name }}">QR</button>
+                <a href="{{ full_public_link }}" target="_blank" class="px-3 py-1.5 rounded-lg text-white font-semibold shadow-sm hover:opacity-95" style="background: linear-gradient(90deg, #34d399, #22c55e);">Open form</a>
+            </div>
+        </div>
+    </div>
+{% endfor %}
+</div>
+
+<div id="qr-modal" class="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 hidden">
+    <div class="bg-white rounded-xl shadow-2xl border border-gray-200 p-5 w-full max-w-sm relative">
+        <button type="button" id="qr-close" class="absolute top-2 right-2 text-gray-500 hover:text-gray-800 text-lg font-bold">&times;</button>
+        <p class="text-xs uppercase text-gray-500 font-semibold">QR code</p>
+        <h3 id="qr-title" class="text-lg font-bold text-gray-900 mb-2"></h3>
+        <div id="qr-box" class="w-full flex justify-center py-3"></div>
+        <p class="text-xs text-gray-600 break-all" id="qr-link"></p>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const modal = document.getElementById('qr-modal');
+        const closeBtn = document.getElementById('qr-close');
+        const qrBox = document.getElementById('qr-box');
+        const qrLink = document.getElementById('qr-link');
+        const qrTitle = document.getElementById('qr-title');
+
+        function openQR(name, link) {
+            qrBox.innerHTML = '';
+            qrTitle.textContent = name || 'Campaign link';
+            qrLink.textContent = link;
+            new QRCode(qrBox, {
+                text: link,
+                width: 220,
+                height: 220,
+            });
+            modal.classList.remove('hidden');
+        }
+
+        document.querySelectorAll('.qr-btn').forEach(btn => {
+            btn.addEventListener('click', () => openQR(btn.dataset.name, btn.dataset.link));
+        });
+        [closeBtn, modal].forEach(el => {
+            el.addEventListener('click', (e) => {
+                if (e.target === modal || e.target === closeBtn) modal.classList.add('hidden');
+            });
+        });
+    });
+</script>
+{% endblock %}

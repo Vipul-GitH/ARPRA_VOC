@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login | ARPRA</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        :root { --primary: #054e5d; --accent: #57b697; --soft: #E9E8E8; }
+        body {
+            background: radial-gradient(circle at 20% 20%, rgba(5,78,93,0.18), transparent 35%),
+                        radial-gradient(circle at 80% 0%, rgba(87,182,151,0.15), transparent 30%),
+                        #0a1820;
+        }
+        .glass {
+            background: rgba(255,255,255,0.92);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255,255,255,0.4);
+            box-shadow: 0 22px 55px rgba(0,0,0,0.22);
+            border-radius: 18px;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center px-4">
+    <div class="glass p-8 w-full max-w-md text-gray-900">
+        <div class="flex items-center space-x-3 mb-4">
+            <img src="/static/img/logo-icon.png" alt="Brand Logo" class="h-10 w-auto">
+            <div>
+                <p class="text-xs uppercase tracking-[0.2em] text-gray-500">Dr Bhasin's Lab</p>
+                <h1 class="text-2xl font-bold" style="color: var(--primary);">ARPRA Voice of Customer</h1>
+            </div>
+        </div>
+        {% if error %}
+            <div class="bg-red-100 text-red-800 p-2 rounded mb-4 text-sm">{{ error }}</div>
+        {% endif %}
+        <form method="post" action="/auth/login" class="space-y-4">
+            <div>
+                <label class="block text-sm font-semibold text-gray-700">Username</label>
+                <input type="text" name="username" class="w-full border border-gray-300 rounded px-3 py-2 focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary)]/20" required>
+            </div>
+            <div>
+                <label class="block text-sm font-semibold text-gray-700">Password</label>
+                <input type="password" name="password" class="w-full border border-gray-300 rounded px-3 py-2 focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary)]/20" required>
+            </div>
+            <button type="submit" class="w-full py-2.5 rounded-lg text-white font-semibold shadow-md" style="background: linear-gradient(90deg, var(--primary), var(--accent));">Sign in</button>
+        </form>
+        <p class="text-xs text-gray-500 mt-4 text-center">Use your VoC credentials to continue.</p>
+    </div>
+</body>
+</html>

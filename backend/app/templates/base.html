@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dr Bhasin's Lab | VoC Feedback Management System</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #054e5d;
+            --accent: #57b697;
+            --ink: #0b1c20;
+            --muted: #948777;
+            --muted-2: #887864;
+            --soft: #E9E8E8;
+            --salmon: #E09B8B;
+        }
+        body {
+            color: var(--ink);
+            background:
+                radial-gradient(1200px at 10% 10%, rgba(5,78,93,0.12), transparent 40%),
+                radial-gradient(1000px at 90% 20%, rgba(87,182,151,0.10), transparent 38%),
+                linear-gradient(135deg, #f9fbff 0%, #eef4f4 50%, #f9fbff 100%);
+        }
+        .app-shell { max-width: 1220px; margin: 0 auto; }
+        .card {
+            background: rgba(255,255,255,0.9);
+            border: 1px solid rgba(5,78,93,0.06);
+            border-radius: 18px;
+            box-shadow: 0 15px 40px rgba(5,78,93,0.12);
+            backdrop-filter: blur(6px);
+        }
+        header {
+            background: linear-gradient(90deg, rgba(5,78,93,0.05), rgba(87,182,151,0.08));
+        }
+        nav a.nav-link {
+            transition: all 160ms ease;
+            color: var(--ink);
+            padding: 0.6rem 1rem;
+            border-radius: 12px;
+            font-weight: 700;
+            letter-spacing: 0.01em;
+        }
+        nav a.nav-link:hover {
+            color: #ffffff;
+            background: linear-gradient(120deg, var(--primary), var(--accent));
+            box-shadow: 0 12px 30px rgba(5,78,93,0.22);
+            transform: translateY(-1px);
+        }
+        nav a.nav-link.nav-active {
+            color: var(--primary);
+            text-decoration: underline;
+            text-decoration-thickness: 2px;
+            text-underline-offset: 8px;
+            background: rgba(87,182,151,0.12);
+            box-shadow: inset 0 0 0 1px rgba(5,78,93,0.1);
+        }
+        .btn-primary {
+            background: var(--primary);
+            color: #fff;
+            padding: 0.65rem 1.3rem;
+            border-radius: 12px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            letter-spacing: 0.01em;
+            box-shadow: 0 12px 30px rgba(5,78,93,0.25);
+        }
+        .btn-primary:hover { opacity: 0.96; transform: translateY(-1px); }
+        .tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.2rem 0.65rem;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 600;
+            background: rgba(87,182,151,0.12);
+            color: var(--primary);
+        }
+        input, select, textarea {
+            color: var(--ink);
+            border-color: #d1d5db;
+        }
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(5,78,93,0.12);
+        }
+        input::placeholder, textarea::placeholder { color: #6b7280; }
+        table { border-spacing: 0; }
+    </style>
+</head>
+<body class="text-gray-900">
+<header class="bg-white/90 backdrop-blur border-b border-gray-200 py-3 shadow-sm">
+    <div class="app-shell flex flex-wrap md:flex-nowrap justify-between items-center px-4 gap-3">
+        <div class="flex items-center space-x-3">
+                <img src="/static/img/logo-icon.png" alt="Brand Logo" class="h-10 w-auto">
+            <div>
+                <div class="flex items-center space-x-2">
+                    <span class="text-xs uppercase tracking-[0.2em] text-gray-500">Voice of Customer</span>
+                    <span class="inline-flex items-center justify-center h-6 px-2 rounded-full text-[11px] font-semibold text-white" style="background: var(--accent); min-width: 36px; text-align: center; color: #000;">VoC</span>
+                </div>
+                <h1 class="text-xl font-extrabold" style="color: var(--brand);">Dr Bhasin's Lab</h1>
+            </div>
+        </div>
+        <nav class="flex flex-wrap items-center gap-2 text-sm font-semibold">
+            <a href="/dashboard" class="nav-link {{ 'nav-active' if request.url.path.startswith('/dashboard') else '' }}">Dashboard</a>
+            <a href="/campaigns/" class="nav-link {{ 'nav-active' if request.url.path.startswith('/campaigns') and not request.url.path.startswith('/campaigns/send') else '' }}">Campaigns</a>
+            <a href="/campaigns/send" class="nav-link {{ 'nav-active' if request.url.path.startswith('/campaigns/send') else '' }}">Send Campaign</a>
+            <a href="/master_questions/" class="nav-link {{ 'nav-active' if request.url.path.startswith('/master_questions') else '' }}">Master Questions</a>
+            <a href="/responses/" class="nav-link {{ 'nav-active' if request.url.path.startswith('/responses') else '' }}">Responses</a>
+            <a href="/tickets/" class="nav-link {{ 'nav-active' if request.url.path.startswith('/tickets') else '' }}">Tickets</a>
+            <a href="/auth/logout" class="nav-link">Logout</a>
+        </nav>
+    </div>
+</header>
+<main class="app-shell p-4">
+    <div class="card p-5">
+        {% block content %}{% endblock %}
+    </div>
+</main>
+<footer class="text-center text-xs text-gray-500 py-6">&copy; {{2026}} Dr Bhasin's Lab</footer>
+</body>
+</html>

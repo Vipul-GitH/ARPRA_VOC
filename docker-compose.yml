@@ -1,0 +1,57 @@
+version: '3.9'
+services:
+  app:
+    build: ./backend
+    ports:
+      - "4000:8000"
+    environment:
+      - DATABASE_URL=mysql+pymysql://arpra:arpra@db:3306/arpra_voc
+      - SECRET_KEY=arpra-secret
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/alembic:/app/alembic
+      - ./backend/alembic.ini:/app/alembic.ini
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: always
+    command: >
+      sh -c "python -c 'import time; time.sleep(5)' &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+  phpmyadmin:
+    image: phpmyadmin:5
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - PMA_HOST=db
+      - PMA_PORT=3306
+      - PMA_USER=browser_nopass
+      - PMA_PASSWORD=
+      - PMA_ALLOW_NO_PASSWORD=yes
+      - MYSQL_ROOT_PASSWORD=rootpass
+    ports:
+      - "8081:80"
+    restart: always
+  db:
+    image: mysql:8
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: arpra_voc
+      MYSQL_USER: arpra
+      MYSQL_PASSWORD: arpra
+    ports:
+      # Host port changed to avoid collisions with existing MySQL instances.
+      - "3308:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./backend/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-prootpass"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+volumes:
+  db_data:

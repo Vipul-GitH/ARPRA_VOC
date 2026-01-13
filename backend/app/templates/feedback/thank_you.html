@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ campaign.thank_you_title or "Thank You" }} | Dr Bhasin's Lab</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>:root { --brand: #054e5d; --text: #054e5d; }</style>
+</head>
+<body class="bg-white flex items-center justify-center min-h-screen text-[var(--text)]">
+    <div class="bg-white p-8 rounded shadow text-center max-w-lg space-y-3 border border-gray-200">
+        {% if campaign.thank_you_image_url %}
+            <div class="flex justify-center">
+                <img src="{{ campaign.thank_you_image_url }}" alt="Thank you" class="max-h-48 rounded">
+            </div>
+        {% endif %}
+        <h1 class="text-2xl font-bold text-teal-700">{{ campaign.thank_you_title or "Thank you for your feedback!" }}</h1>
+        <p class="mt-2 text-gray-700">
+            {{ campaign.thank_you_message or "Your response was submitted successfully. Our team will review and act on your feedback promptly." }}
+        </p>
+        <p class="mt-2 text-sm text-gray-500">Campaign: {{ campaign.name }}</p>
+        <a href="/" class="mt-4 inline-block bg-teal-700 text-white px-4 py-2 rounded">Back to home</a>
+    </div>
+</body>
+</html>

@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="space-y-4">
+    <div>
+        <p class="text-xs uppercase text-indigo-600 font-semibold">Send Campaign</p>
+        <h2 class="text-2xl font-bold">Share via uploaded contacts</h2>
+        <p class="text-sm text-gray-600">Pick a campaign, upload a CSV/Excel with name and contact columns. We save the list and send the WhatsApp message with the campaign link using your configured account.</p>
+    </div>
+
+    {% if error %}
+        <div class="bg-rose-50 border border-rose-200 text-rose-800 text-sm px-3 py-2 rounded">{{ error }}</div>
+    {% endif %}
+    {% if summary %}
+        <div class="bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm px-3 py-2 rounded space-y-1">
+            <p>Added {{ summary.count }} contacts to "{{ summary.list_name }}" for {{ summary.campaign }}.</p>
+            <p>WhatsApp send: {{ summary.send_success }} sent{% if summary.send_failed and summary.send_failed|length > 0 %}, {{ summary.send_failed|length }} failed{% endif %}.</p>
+            {% if summary.send_failed and summary.send_failed|length > 0 %}
+                <div class="text-rose-700 bg-rose-50 border border-rose-200 rounded px-2 py-1">
+                    <p class="font-semibold text-xs">Failed targets:</p>
+                    <ul class="list-disc list-inside text-xs">
+                        {% for f in summary.send_failed[:5] %}
+                        <li>{{ f.target }} ({{ f.error }})</li>
+                        {% endfor %}
+                        {% if summary.send_failed|length > 5 %}
+                        <li>... and {{ summary.send_failed|length - 5 }} more.</li>
+                        {% endif %}
+                    </ul>
+                </div>
+            {% endif %}
+        </div>
+    {% endif %}
+
+    <form id="send-form" method="post" action="/campaigns/send" enctype="multipart/form-data" class="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
+        <div>
+            <label class="block text-sm font-semibold">Campaign</label>
+            <select name="campaign_id" class="w-full border rounded px-3 py-2" required>
+                <option value="">Select campaign</option>
+                {% for c in campaigns %}
+                    <option value="{{ c.id }}">{{ c.name }} ({{ c.code }})</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="block text-sm font-semibold">Upload contacts (.csv or .xlsx)</label>
+            <input type="file" name="file" accept=".csv,.xlsx" class="w-full border rounded px-3 py-2 bg-white" required>
+            <p class="text-xs text-gray-500 mt-1">Headers: name, contact/mobile/phone. We'll attempt to WhatsApp the link for each contact.</p>
+        </div>
+        <div class="flex justify-end">
+            <button class="px-4 py-2 rounded text-white font-semibold shadow" style="background:#054e5d;">Upload recipients</button>
+        </div>
+    </form>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const form = document.getElementById('send-form');
+        {% if summary %}
+        Swal.fire({
+            icon: 'success',
+            title: 'Recipients added',
+            text: 'Total: {{ summary.count }} | Sent: {{ summary.send_success }}{% if summary.send_failed and summary.send_failed|length > 0 %} | Failed: {{ summary.send_failed|length }}{% endif %}',
+            confirmButtonColor: '#054e5d'
+        });
+        {% elif error %}
+        Swal.fire({
+            icon: 'error',
+            title: 'Upload failed',
+            text: "{{ error }}",
+            confirmButtonColor: '#054e5d'
+        });
+        {% endif %}
+
+        if (form && {{ 'true' if summary else 'false' }}) {
+            form.reset();
+        }
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card p-4 space-y-2">
+    <div class="flex items-center justify-between mb-2">
+        <div>
+            <p class="text-xs uppercase tracking-wide text-[var(--primary,#054e5d)] font-semibold">Response</p>
+            <h2 class="text-xl font-bold">Response #{{ response.id }}</h2>
+        </div>
+        <a href="/responses/" class="text-sm text-[var(--primary,#054e5d)] underline">Back</a>
+    </div>
+    <div class="bg-white p-4 rounded shadow space-y-2 border border-gray-200">
+        <p><span class="font-semibold">Campaign:</span> {{ response.campaign.name if response.campaign else '' }}</p>
+        <p><span class="font-semibold">Submitted:</span> {{ response.submission_time|local_time }}</p>
+        <p><span class="font-semibold">Overall Score:</span> {{ response.overall_score if response.overall_score is not none else 'N/A' }}</p>
+        <p><span class="font-semibold">Status:</span> {{ response.status }}</p>
+        {% set pii = response.pii_data_json or {} %}
+        {% set phone = pii.get('contact') or ((pii.get('mobile_country') or '') ~ ' ' ~ (pii.get('mobile_number') or '')) %}
+        <p><span class="font-semibold">Responder:</span> {{ pii.get('name','') }} {% if phone %} ({{ phone }}){% endif %}</p>
+    </div>
+    <div class="bg-white p-4 rounded shadow border border-gray-200">
+        <h3 class="font-semibold mb-2">Answers</h3>
+        <ul class="space-y-2">
+            {% for a in response.answers if a.answer_text or a.selected_option_values or a.follow_up_text %}
+                <li class="border-b pb-2">
+                    <p class="font-semibold">{{ a.question.question_text_en }}</p>
+                    <p class="text-sm text-gray-700">
+                        {% if a.answer_text %}{{ a.answer_text }}{% endif %}
+                        {% if a.selected_option_values %}{{ a.selected_option_values }}{% endif %}
+                        {% if a.follow_up_text %}<br><span class="text-xs text-gray-600">Follow-up: {{ a.follow_up_text }}</span>{% endif %}
+                    </p>
+                    <p class="text-xs text-gray-500">Sentiment: {{ a.sentiment or 'n/a' }}, Score: {{ a.score_value or 'n/a' }}</p>
+                </li>
+            {% endfor %}
+        </ul>
+    </div>
+</div>
+{% endblock %}

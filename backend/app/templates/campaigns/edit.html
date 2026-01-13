@@ -1,0 +1,918 @@
+{% extends 'base.html' %}
+{% block content %}
+<style>
+    .campaign-hero {
+        background: radial-gradient(120% 140% at 10% 10%, rgba(5,78,93,0.18), transparent 50%),
+                    radial-gradient(120% 140% at 90% 20%, rgba(87,182,151,0.20), transparent 50%),
+                    linear-gradient(120deg, #0b1c20, #0f3c4d 45%, #0a5a6c);
+        color: #e8f4f2;
+        border-radius: 22px;
+        padding: 22px 24px;
+        box-shadow: 0 18px 38px rgba(0,0,0,0.22);
+        position: relative;
+        overflow: hidden;
+    }
+    .campaign-hero:after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(135deg, rgba(255,255,255,0.12), transparent 45%);
+        pointer-events: none;
+    }
+    .floating-dot {
+        position: absolute;
+        width: 320px;
+        height: 320px;
+        background: radial-gradient(circle, rgba(87,182,151,0.25), transparent 50%);
+        filter: blur(50px);
+        top: -120px;
+        right: -40px;
+        opacity: 0.6;
+    }
+    .mini-rail {
+        display: inline-flex;
+        gap: 6px;
+        align-items: center;
+    }
+    .mini-rail .dot { width: 9px; height: 9px; border-radius: 50%; background: rgba(255,255,255,0.7); box-shadow: 0 0 0 4px rgba(255,255,255,0.12); }
+    .section-card {
+        background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(255,255,255,0.88));
+        border: 1px solid rgba(5,78,93,0.08);
+        border-radius: 18px;
+        box-shadow: 0 16px 40px rgba(5,78,93,0.12);
+        backdrop-filter: blur(8px);
+    }
+    .pill-link {
+        padding: 8px 12px;
+        border-radius: 12px;
+        background: rgba(5,78,93,0.06);
+        color: #0b3c4a;
+        font-weight: 600;
+    }
+    .pill-link:hover { background: rgba(5,78,93,0.14); }
+    .question-card {
+        border: 1px solid rgba(5,78,93,0.08);
+        background: radial-gradient(120% 140% at 20% 20%, rgba(5,78,93,0.04), transparent 55%), #ffffff;
+        box-shadow: 0 14px 30px rgba(0,0,0,0.08);
+        transition: transform 120ms ease, box-shadow 160ms ease;
+    }
+    .question-card:hover { transform: translateY(-2px); box-shadow: 0 18px 42px rgba(0,0,0,0.12); }
+    .status-chip {
+        border-radius: 999px;
+        padding: 4px 10px;
+        border: 1px solid;
+        font-weight: 600;
+    }
+    .status-chip.required { background: #ecfdf3; color: #047857; border-color: #bbf7d0; }
+    .status-chip.optional { background: #f3f4f6; color: #374151; border-color: #e5e7eb; }
+    .status-chip.master { background: #eef2ff; color: #3730a3; border-color: #c7d2fe; }
+    .status-chip.type { background: #e0f2fe; color: #075985; border-color: #bae6fd; }
+    .status-chip.count { background: #f8fafc; color: #334155; border-color: #e2e8f0; }
+</style>
+<div class="space-y-6">
+    <div class="campaign-hero">
+        <div class="floating-dot"></div>
+        <div class="flex flex-wrap items-start justify-between gap-4 relative z-10">
+            <div class="space-y-2">
+                <div class="mini-rail">
+                    <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+                    <span class="text-xs uppercase tracking-[0.18em] text-gray-100">Campaign Builder</span>
+                </div>
+                <h2 class="text-3xl font-extrabold leading-tight">{{ campaign.name if campaign else 'Create a campaign' }}</h2>
+                <p class="text-sm text-gray-100/90 max-w-2xl">Design your questions, keep flow clear, and ship a premium feedback form without losing context.</p>
+                <div class="flex flex-wrap gap-2 text-xs font-semibold">
+                    <span class="px-3 py-1 rounded-full bg-white/15 text-white border border-white/20">Step 1 · Basics</span>
+                    <span class="px-3 py-1 rounded-full bg-white/10 text-white/90 border border-white/15">Step 2 · Questions</span>
+                    <span class="px-3 py-1 rounded-full bg-white/10 text-white/90 border border-white/15">Step 3 · Flow</span>
+                </div>
+            </div>
+            <div class="flex flex-col items-end gap-2">
+                <div class="flex gap-2">
+                    <a href="#basics" class="pill-link">Basics</a>
+                    <a href="#add-question" class="pill-link">Add question</a>
+                    <a href="#existing-questions" class="pill-link">Existing</a>
+                    <a href="#flow-mapping" class="pill-link">Flow</a>
+                </div>
+                <a href="/campaigns/" class="text-xs text-white underline">Back to list</a>
+            </div>
+        </div>
+    </div>
+
+    {% if error %}
+    <div class="bg-rose-50 border border-rose-200 text-rose-800 px-4 py-3 rounded">
+        {{ error }}
+    </div>
+    {% endif %}
+
+    <form id="basics" method="post" action="{{ action }}" class="section-card p-5 space-y-3">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+                <label class="block text-sm font-semibold">Name</label>
+                <input type="text" name="name" value="{{ campaign.name if campaign else '' }}" class="w-full border rounded px-3 py-2" required>
+            </div>
+            <div>
+                <label class="block text-sm font-semibold">Code</label>
+                <input type="text" name="code" value="{{ campaign.code if campaign else '' }}" class="w-full border rounded px-3 py-2" {% if campaign %}readonly{% endif %} required>
+            </div>
+            <div>
+                <label class="block text-sm font-semibold">Form header title</label>
+                <input type="text" name="header_title" value="{{ campaign.header_title if campaign else '' }}" class="w-full border rounded px-3 py-2" placeholder="Shown on feedback form header">
+            </div>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+                <label class="block text-sm font-semibold">Campaign Type</label>
+                <input type="text" name="campaign_type" value="{{ campaign.campaign_type if campaign else 'walk_in' }}" class="w-full border rounded px-3 py-2">
+            </div>
+            <div>
+                <label class="block text-sm font-semibold">Status</label>
+                <input type="text" name="status" value="{{ campaign.status if campaign else 'draft' }}" class="w-full border rounded px-3 py-2">
+            </div>
+            <div>
+                <label class="block text-sm font-semibold">Layout</label>
+                <select name="layout_type" class="w-full border rounded px-3 py-2">
+                    <option value="one_page" {% if campaign and campaign.layout_type=='one_page' %}selected{% endif %}>One Page</option>
+                    <option value="one_question_per_page" {% if campaign and campaign.layout_type=='one_question_per_page' %}selected{% endif %}>One Question Per Page</option>
+                </select>
+            </div>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+                <label class="block text-sm font-semibold">Primary Language</label>
+                <select name="primary_language" class="w-full border rounded px-3 py-2">
+                    <option value="en" {% if not campaign or campaign.primary_language=='en' %}selected{% endif %}>English</option>
+                    <option value="hi" {% if campaign and campaign.primary_language=='hi' %}selected{% endif %}>Hindi</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-semibold">Estimated Fill Time (sec)</label>
+                <input type="number" name="estimated_fill_time_seconds" value="{{ campaign.estimated_fill_time_seconds if campaign else 60 }}" class="w-full border rounded px-3 py-2">
+            </div>
+            <div>
+                <label class="block text-sm font-semibold">Description</label>
+                <input type="text" name="description" value="{{ campaign.description if campaign else '' }}" class="w-full border rounded px-3 py-2">
+            </div>
+        </div>
+        <div class="flex justify-end">
+            <button type="submit" class="btn-primary">Save campaign</button>
+        </div>
+    </form>
+
+    <div id="add-question" class="section-card p-5 space-y-4">
+        <div class="flex items-center justify-between">
+            <div>
+                <p class="text-xs uppercase tracking-wide text-teal-700 font-semibold">Question designer</p>
+                <h3 class="text-lg font-semibold">Add a question</h3>
+                <p class="text-sm text-gray-600">Pick a type, set required, and add options for choice/rating types.</p>
+            </div>
+        </div>
+        {% if not campaign %}
+            <div class="bg-amber-50 border border-amber-200 text-amber-800 text-sm px-3 py-2 rounded">
+                Save the campaign first, then add questions.
+            </div>
+        {% else %}
+        <form method="post" action="/questionnaire/{{ campaign.id }}/add_question" class="mt-2 space-y-3" id="new-question-form">
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-semibold">Question text</label>
+                    <input type="text" name="question_text_en" placeholder="How was your experience today?" class="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-indigo-200" data-title-case="true" required>
+                </div>
+                <div class="md:col-span-2 hidden" id="new-question-placeholder">
+                    <label class="block text-sm font-semibold">Answer placeholder (text type)</label>
+                    <input type="text" name="placeholder_en" placeholder="Type your response here" class="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-indigo-200">
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold">Type</label>
+                    <select name="question_type" id="question_type_select" class="w-full border rounded px-3 py-2 bg-indigo-50 text-indigo-900 font-semibold">
+                        <option value="text">Text</option>
+                        <option value="mcq_single">Single Choice</option>
+                        <option value="mcq_multi">Multi Choice</option>
+                        <option value="rating_1_5">Rating 1-5</option>
+                    </select>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <input type="checkbox" name="is_required" id="is_required" class="h-4 w-4 text-indigo-600">
+                    <label for="is_required" class="text-sm font-semibold text-gray-700">Required</label>
+                </div>
+                <div class="md:col-span-1 flex justify-end">
+                    <button class="btn-primary">Add question</button>
+                </div>
+            </div>
+
+            <div id="option-builder" class="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-2">
+                <div class="flex items-center justify-between">
+                    <p class="text-xs uppercase tracking-wide text-gray-600 font-semibold">Options (for choice/rating)</p>
+                    <button type="button" id="add-option-row" class="px-2 py-1 text-xs rounded bg-white border border-gray-300 hover:border-teal-700">+ Add option</button>
+                </div>
+                <div id="option-rows" class="space-y-2">
+                    <div class="grid grid-cols-1 md:grid-cols-6 gap-2 option-row">
+                        <input type="text" name="option_text_en" placeholder="Label" class="border rounded px-2 py-1 md:col-span-2" data-title-case="true">
+                        <input type="text" name="option_value" placeholder="Value" class="border rounded px-2 py-1">
+                        <select name="sentiment" class="border rounded px-2 py-1">
+                            <option value="positive">Positive</option>
+                            <option value="neutral" selected>Neutral</option>
+                            <option value="negative">Negative</option>
+                        </select>
+                        <input type="number" name="score_value" value="0" class="border rounded px-2 py-1" placeholder="Score">
+                        <div class="md:col-span-2 flex items-center gap-2 followup-container">
+                            <label class="inline-flex items-center text-xs text-gray-700">
+                                <input type="checkbox" class="followup-check h-4 w-4 text-indigo-600">
+                                <span class="ml-1">Add follow-up prompt</span>
+                            </label>
+                            <input type="text" name="follow_up_label" placeholder="Follow-up prompt" class="border rounded px-2 py-1 flex-1 followup-input hidden">
+                        </div>
+                        <button type="button" class="remove-option px-2 py-1 text-xs text-rose-600 border border-rose-200 rounded">Remove</button>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-6 gap-2 option-row">
+                        <input type="text" name="option_text_en" placeholder="Label" class="border rounded px-2 py-1 md:col-span-2" data-title-case="true">
+                        <input type="text" name="option_value" placeholder="Value" class="border rounded px-2 py-1">
+                        <select name="sentiment" class="border rounded px-2 py-1">
+                            <option value="positive">Positive</option>
+                            <option value="neutral" selected>Neutral</option>
+                            <option value="negative">Negative</option>
+                        </select>
+                        <input type="number" name="score_value" value="0" class="border rounded px-2 py-1" placeholder="Score">
+                        <div class="md:col-span-2 flex items-center gap-2 followup-container">
+                            <label class="inline-flex items-center text-xs text-gray-700">
+                                <input type="checkbox" class="followup-check h-4 w-4 text-indigo-600">
+                                <span class="ml-1">Add follow-up prompt</span>
+                            </label>
+                            <input type="text" name="follow_up_label" placeholder="Follow-up prompt" class="border rounded px-2 py-1 flex-1 followup-input hidden">
+                        </div>
+                        <button type="button" class="remove-option px-2 py-1 text-xs text-rose-600 border border-rose-200 rounded">Remove</button>
+                    </div>
+                </div>
+                <p class="text-xs text-gray-500">Options are saved only for choice/rating questions. Values default to 1..N if left blank.</p>
+            </div>
+        </form>
+        <div class="mt-1 text-xs text-gray-600 flex flex-wrap gap-2">
+            <span class="px-2 py-1 bg-teal-700 text-white rounded">Use rating for overall</span>
+            <span class="px-2 py-1 bg-gray-100 text-teal-700 rounded">Use text for verbatim feedback</span>
+        </div>
+        {% if master_questions is defined %}
+        <div class="mt-2 border-t pt-4">
+            <p class="text-xs uppercase tracking-wide text-indigo-600 font-semibold">Add from master</p>
+            <form method="post" action="/questionnaire/{{ campaign.id }}/add_master_question" class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end mt-2">
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-semibold">Pick master question</label>
+                    <select name="master_question_id" class="w-full border rounded px-3 py-2">
+                        {% for m in master_questions %}
+                            <option value="{{ m.id }}">{{ m.code }} - {{ m.default_text_en }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold">Required?</label>
+                    <label class="inline-flex items-center space-x-2 text-sm text-gray-700">
+                        <input type="checkbox" name="is_required" class="h-4 w-4 text-indigo-600">
+                        <span>Required</span>
+                    </label>
+                </div>
+                <div class="flex justify-end">
+                    <button class="btn-primary">Add from master</button>
+                </div>
+            </form>
+            {% if not master_questions %}
+                <p class="text-xs text-gray-500 mt-1">No master questions yet. Create them under Master Questions.</p>
+            {% endif %}
+        </div>
+        {% endif %}
+        {% endif %}
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const typeSelect = document.getElementById('question_type_select');
+            const optionBuilder = document.getElementById('option-builder');
+            const rows = document.getElementById('option-rows');
+            const addBtn = document.getElementById('add-option-row');
+            const newQuestionForm = document.getElementById('new-question-form');
+            const placeholderWrap = document.getElementById('new-question-placeholder');
+            const placeholderInput = placeholderWrap ? placeholderWrap.querySelector('input[name="placeholder_en"]') : null;
+
+            function toggleOptions() {
+                const val = typeSelect.value || '';
+                const show = val.startsWith('mcq') || val.startsWith('rating');
+                optionBuilder.classList.toggle('hidden', !show);
+                const isText = val === 'text';
+                if (placeholderWrap) placeholderWrap.classList.toggle('hidden', !isText);
+                if (!isText && placeholderInput) placeholderInput.value = '';
+            }
+
+            function syncFollowup(toggle, box) {
+                if (!toggle || !box) return;
+                if (toggle.checked) {
+                    box.classList.remove('hidden');
+                    box.style.display = '';
+                } else {
+                    box.classList.add('hidden');
+                    box.style.display = 'none';
+                    box.value = '';
+                }
+            }
+
+            function bindFollowup(row) {
+                const toggle = row.querySelector('.followup-check');
+                const box = row.querySelector('.followup-input');
+                const clearBtn = row.querySelector('.clear-followup');
+                const parentForm = row.closest('form');
+                const isUpdateForm = parentForm && parentForm.classList.contains('option-update-form');
+                const submitOnClear = row.dataset.submitOnClear === 'true';
+                if (!toggle || !box) return;
+                const handle = () => syncFollowup(toggle, box);
+                toggle.addEventListener('change', handle);
+                if (clearBtn) {
+                    clearBtn.addEventListener('click', () => {
+                        toggle.checked = false;
+                        box.value = '';
+                        syncFollowup(toggle, box);
+                        if (submitOnClear && isUpdateForm) parentForm.submit();
+                    });
+                }
+                handle();
+            }
+
+            function bindFollowupContainers(scope = document) {
+                scope.querySelectorAll('.followup-container .followup-check').forEach(toggle => {
+                    const wrap = toggle.closest('.followup-container');
+                    const box = wrap ? wrap.querySelector('.followup-input') : null;
+                    const clearBtn = wrap ? wrap.querySelector('.clear-followup') : null;
+                    const parentForm = wrap ? wrap.closest('form') : null;
+                    const isUpdateForm = parentForm && parentForm.classList.contains('option-update-form');
+                    const submitOnClear = wrap && wrap.dataset.submitOnClear === 'true';
+                    if (!box) return;
+                    const handle = () => syncFollowup(toggle, box);
+                    toggle.addEventListener('change', handle);
+                    if (clearBtn) {
+                        clearBtn.addEventListener('click', () => {
+                            toggle.checked = false;
+                            box.value = '';
+                            syncFollowup(toggle, box);
+                            if (submitOnClear && isUpdateForm) parentForm.submit();
+                        });
+                    }
+                    handle();
+                });
+            }
+
+            function addRow() {
+                const template = rows.querySelector('.option-row');
+                if (!template) return;
+                const clone = template.cloneNode(true);
+                clone.querySelectorAll('input').forEach(el => {
+                    if (el.type === 'checkbox') {
+                        el.checked = false;
+                    } else {
+                        el.value = '';
+                    }
+                });
+                clone.querySelectorAll('select').forEach(el => { el.value = 'neutral'; });
+                rows.appendChild(clone);
+                bindRemove(clone);
+                bindFollowup(clone);
+                bindFollowupContainers(clone);
+            }
+
+            function bindRemove(row) {
+                const btn = row.querySelector('.remove-option');
+                if (!btn) return;
+                btn.addEventListener('click', () => {
+                    if (rows.children.length > 1) {
+                        row.remove();
+                    } else {
+                        row.querySelectorAll('input').forEach(el => el.value = '');
+                        row.querySelectorAll('select').forEach(el => { el.value = 'neutral'; });
+                    }
+                });
+            }
+
+            Array.from(rows.children).forEach(r => { bindRemove(r); bindFollowup(r); });
+            document.querySelectorAll('.option-row').forEach(bindFollowup);
+            bindFollowupContainers();
+            addBtn.addEventListener('click', addRow);
+            typeSelect.addEventListener('change', toggleOptions);
+            toggleOptions();
+
+            if (newQuestionForm) {
+                newQuestionForm.addEventListener('submit', (e) => {
+                    const val = typeSelect.value || '';
+                    if (val !== 'text' && placeholderInput) {
+                        placeholderInput.value = '';
+                    }
+                    const needsOptions = val.startsWith('mcq') || val.startsWith('rating');
+                    if (!needsOptions) return;
+                    const texts = Array.from(rows.querySelectorAll('input[name="option_text_en"]'))
+                        .map(el => (el.value || '').trim())
+                        .filter(Boolean);
+                    if (!texts.length) {
+                        e.preventDefault();
+                        alert('Please add at least one option for this question type.');
+                    }
+                });
+            }
+        });
+    </script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const cards = document.querySelectorAll('.question-card');
+            const expandAll = document.getElementById('expand-all');
+            const collapseAll = document.getElementById('collapse-all');
+
+            function setCard(card, expanded) {
+                const btn = card.querySelector('.toggle-question');
+                const targetId = btn ? btn.dataset.target : null;
+                const body = targetId ? document.getElementById(targetId) : null;
+                if (!body) return;
+                body.classList.toggle('hidden', !expanded);
+                if (btn) btn.textContent = expanded ? 'Collapse' : 'Expand';
+            }
+
+            cards.forEach((card) => {
+                const btn = card.querySelector('.toggle-question');
+                if (!btn) return;
+                btn.addEventListener('click', () => {
+                    const target = document.getElementById(btn.dataset.target);
+                    const isHidden = target ? target.classList.contains('hidden') : true;
+                    setCard(card, isHidden);
+                });
+                setCard(card, false);
+            });
+
+            if (expandAll) expandAll.addEventListener('click', () => cards.forEach(c => setCard(c, true)));
+            if (collapseAll) collapseAll.addEventListener('click', () => cards.forEach(c => setCard(c, false)));
+        });
+    </script>
+
+    <div id="existing-questions" class="section-card p-5">
+        <div class="flex items-center justify-between mb-3">
+            <h3 class="text-lg font-semibold">Existing questions</h3>
+            <div class="flex items-center gap-2">
+                <span class="text-sm text-gray-500">Total: {{ questions|length }}</span>
+                <button type="button" id="expand-all" class="px-3 py-1 text-xs rounded border border-gray-300 hover:border-teal-700">Expand all</button>
+                <button type="button" id="collapse-all" class="px-3 py-1 text-xs rounded border border-gray-300 hover:border-teal-700">Collapse all</button>
+            </div>
+        </div>
+        <p class="text-xs text-gray-600 mb-3">Edit inline without losing place. Expand a card, update, and your changes save instantly - no full page reload.</p>
+        {% if questions %}
+        <div id="question-list" class="grid grid-cols-1 md:grid-cols-2 gap-4" style="max-height: 650px; overflow: auto; padding-right: 4px;">
+            {% for q in questions %}
+            <div class="border border-gray-200 rounded-lg p-4 shadow-sm space-y-3 question-card" data-question-id="{{ q.id }}">
+                <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0">
+                        <p class="text-xs uppercase tracking-wide text-gray-500 question-order" data-master="{{ 'true' if q.master_question_id else 'false' }}">Q{{ loop.index }} {% if q.master_question_id %}- Master linked{% endif %}</p>
+                        <p class="text-sm font-semibold text-gray-900" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px;">
+                            {{ q.question_text_en }}
+                        </p>
+                        <div class="flex flex-wrap gap-2 mt-1 text-xs">
+                            <span class="px-2 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-100">Type: {{ q.question_type }}</span>
+                            <span class="px-2 py-0.5 rounded bg-gray-100 text-gray-700 border border-gray-200">Options: {{ q.options|length }}</span>
+                            <span class="px-2 py-0.5 rounded {% if q.is_required %}bg-emerald-50 text-emerald-700 border border-emerald-100{% else %}bg-gray-50 text-gray-700 border border-gray-200{% endif %}">{% if q.is_required %}Required{% else %}Optional{% endif %}</span>
+                            {% if q.master_question_id %}<span class="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-100">Master linked</span>{% endif %}
+                        </div>
+                    </div>
+                    <button type="button" class="toggle-question px-3 py-1 rounded border border-gray-300 text-xs hover:border-teal-700" data-target="q-body-{{ q.id }}">Expand</button>
+                </div>
+                <div id="q-body-{{ q.id }}" class="q-body hidden space-y-3">
+                <form method="post" action="/questionnaire/{{ campaign.id }}/questions/{{ q.id }}/update" class="space-y-2 question-update-form">
+                    <div class="flex items-start justify-between">
+                        <div class="w-full pr-3">
+                            <p class="text-xs uppercase tracking-wide text-gray-500 question-order" data-master="{{ 'true' if q.master_question_id else 'false' }}">Q{{ loop.index }} {% if q.master_question_id %}- Master linked{% endif %}</p>
+                            <input type="text" name="question_text_en" value="{{ q.question_text_en }}" class="w-full border rounded px-2 py-1 text-sm" data-title-case="true" required>
+                            <div class="mt-2 hidden text-placeholder">
+                                <label class="block text-xs font-semibold text-gray-700">Answer placeholder (text type)</label>
+                                <input type="text" name="placeholder_en" value="{{ q.placeholder_en or '' }}" class="w-full border rounded px-2 py-1 text-xs" placeholder="Type your response here">
+                            </div>
+                        </div>
+                        <div class="flex flex-col items-end space-y-2">
+                            <select name="question_type" class="border rounded px-2 py-1 text-xs">
+                                <option value="text" {% if q.question_type=='text' %}selected{% endif %}>Text</option>
+                                <option value="mcq_single" {% if q.question_type=='mcq_single' %}selected{% endif %}>Single choice</option>
+                                <option value="mcq_multi" {% if q.question_type=='mcq_multi' %}selected{% endif %}>Multi choice</option>
+                                <option value="rating_1_5" {% if q.question_type=='rating_1_5' %}selected{% endif %}>Rating 1-5</option>
+                            </select>
+                            <label class="inline-flex items-center space-x-1 text-xs text-gray-700">
+                                <input type="checkbox" name="is_required" class="h-4 w-4 text-indigo-600" {% if q.is_required %}checked{% endif %}>
+                                <span>Required</span>
+                            </label>
+                            <div class="flex space-x-2">
+                                <button class="bg-indigo-600 text-white px-3 py-1 rounded shadow-sm text-xs">Save</button>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+                {% if q.master_question_id %}
+                <form method="post" action="/questionnaire/{{ campaign.id }}/questions/{{ q.id }}/sync_master">
+                    <button class="bg-emerald-600 text-white px-3 py-1 rounded shadow-sm text-xs">Sync from master</button>
+                </form>
+                {% endif %}
+                <div class="flex items-center justify-between text-xs text-gray-600">
+                    <div class="flex space-x-2">
+                        <form method="post" action="/questionnaire/{{ campaign.id }}/questions/{{ q.id }}/move">
+                            <input type="hidden" name="direction" value="up">
+                            <button class="px-2 py-1 border border-gray-300 rounded hover:border-teal-700">Up</button>
+                        </form>
+                        <form method="post" action="/questionnaire/{{ campaign.id }}/questions/{{ q.id }}/move">
+                            <input type="hidden" name="direction" value="down">
+                            <button class="px-2 py-1 border border-gray-300 rounded hover:border-teal-700">Down</button>
+                        </form>
+                        <form method="post" action="/questionnaire/{{ campaign.id }}/questions/{{ q.id }}/copy">
+                            <button class="px-2 py-1 border border-gray-300 rounded hover:border-teal-700">Copy</button>
+                        </form>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <p class="text-xs text-gray-500">Add option (for choice/rating):</p>
+                        <form method="post" action="/questionnaire/{{ campaign.id }}/questions/{{ q.id }}/delete" onsubmit="return confirm('Delete this question?');">
+                            <button class="text-rose-600 text-xs underline">Delete</button>
+                        </form>
+                    </div>
+                </div>
+                <div class="border border-gray-200 rounded-lg p-3 bg-gray-50 space-y-2">
+                    <div class="flex items-center justify-between text-xs text-gray-600">
+                        <p class="font-semibold">Add option (for choice/rating)</p>
+                    </div>
+                    <form method="post" action="/questionnaire/{{ campaign.id }}/questions/{{ q.id }}/add_option" class="space-y-2 text-xs add-option-form">
+                        <div class="grid grid-cols-1 md:grid-cols-12 gap-2 items-center">
+                            <input type="text" name="option_text_en" placeholder="Great" class="border rounded px-2 py-1 md:col-span-4" data-title-case="true" required>
+                            <input type="text" name="option_value" placeholder="5" class="border rounded px-2 py-1 md:col-span-2" required>
+                            <select name="sentiment" class="border rounded px-2 py-1 md:col-span-2">
+                                <option value="positive">Positive</option>
+                                <option value="neutral">Neutral</option>
+                                <option value="negative">Negative</option>
+                            </select>
+                            <input type="number" name="score_value" value="0" class="border rounded px-2 py-1 md:col-span-2" placeholder="Score">
+                            <div class="md:col-span-2 flex justify-end">
+                                <button class="bg-indigo-600 text-white px-3 py-2 rounded shadow-sm w-full md:w-auto">Add</button>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2 followup-container">
+                            <label class="inline-flex items-center gap-1 text-xs text-gray-700">
+                                <input type="checkbox" class="followup-check h-4 w-4 text-indigo-600">
+                                <span>Follow-up prompt</span>
+                            </label>
+                            <input type="text" name="follow_up_label" placeholder="Ask for more detail when this option is chosen" class="border rounded px-2 py-1 flex-1 followup-input hidden">
+                            <button type="button" class="px-2 py-1 text-xs border border-gray-300 rounded clear-followup">Clear</button>
+                        </div>
+                    </form>
+                </div>
+                <div class="flex flex-col gap-2">
+                    {% for o in q.options %}
+                        <div class="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-2">
+                            <form method="post" action="/questionnaire/{{ campaign.id }}/options/{{ o.id }}/update" class="space-y-2 option-update-form text-xs">
+                                <div class="grid grid-cols-1 md:grid-cols-12 gap-2 items-center">
+                                    <input type="text" name="option_text_en" value="{{ o.option_text_en }}" class="border rounded px-2 py-1 md:col-span-4" data-title-case="true" required>
+                                    <input type="text" name="option_value" value="{{ o.option_value }}" class="border rounded px-2 py-1 md:col-span-2" required>
+                                    <select name="sentiment" class="border rounded px-2 py-1 md:col-span-2">
+                                        <option value="positive" {% if o.sentiment=='positive' %}selected{% endif %}>Positive</option>
+                                        <option value="neutral" {% if o.sentiment=='neutral' %}selected{% endif %}>Neutral</option>
+                                        <option value="negative" {% if o.sentiment=='negative' %}selected{% endif %}>Negative</option>
+                                    </select>
+                                    <input type="number" name="score_value" value="{{ o.score_value or 0 }}" class="border rounded px-2 py-1 md:col-span-2" placeholder="Score">
+                                    <div class="md:col-span-2 flex justify-end">
+                                        <button class="bg-emerald-600 text-white px-3 py-2 rounded shadow-sm w-full md:w-auto">Save</button>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-2 followup-container" data-submit-on-clear="true">
+                                    <label class="inline-flex items-center gap-1 text-xs text-gray-700">
+                                        <input type="checkbox" class="followup-check h-4 w-4 text-indigo-600" {% if o.follow_up_label %}checked{% endif %}>
+                                        <span>Follow-up prompt</span>
+                                    </label>
+                                    <input type="text" name="follow_up_label" value="{{ o.follow_up_label or '' }}" class="border rounded px-2 py-1 flex-1 followup-input {% if not o.follow_up_label %}hidden{% endif %}" placeholder="Ask for more detail when this option is chosen">
+                                    <button type="button" class="px-2 py-1 text-xs border border-gray-300 rounded clear-followup">Delete follow-up</button>
+                                </div>
+                            </form>
+                            <div class="flex flex-wrap gap-2 justify-end text-xs">
+                                <form method="post" action="/questionnaire/{{ campaign.id }}/options/{{ o.id }}/move" class="inline-flex space-x-1 items-center">
+                                    <input type="hidden" name="direction" value="up">
+                                    <button class="px-2 py-1 border border-gray-300 rounded hover:border-teal-700">Up</button>
+                                </form>
+                                <form method="post" action="/questionnaire/{{ campaign.id }}/options/{{ o.id }}/move" class="inline-flex space-x-1 items-center">
+                                    <input type="hidden" name="direction" value="down">
+                                    <button class="px-2 py-1 border border-gray-300 rounded hover:border-teal-700">Down</button>
+                                </form>
+                                <form method="post" action="/questionnaire/{{ campaign.id }}/options/{{ o.id }}/delete" class="inline-flex items-center" onsubmit="return confirm('Delete this option?');">
+                                    <button class="text-rose-600 underline px-2 py-1">Delete</button>
+                                </form>
+                            </div>
+                        </div>
+                    {% endfor %}
+                    {% if not q.options %}
+                        <span class="text-xs text-gray-400">No options yet</span>
+                    {% endif %}
+                </div>
+                </div> <!-- q-body -->
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center text-gray-500 text-sm py-4 bg-gray-50 rounded">No questions yet. Add your first one above.</div>
+        {% endif %}
+    </div>
+
+    {% if questions %}
+    <div class="flex items-center justify-between">
+        <div>
+            <p class="text-xs uppercase tracking-wide text-indigo-600 font-semibold">Step 3</p>
+            <h3 class="text-lg font-semibold">Flow & thank-you</h3>
+            <p class="text-sm text-gray-600">Keep optional flow mapping hidden unless you need it.</p>
+        </div>
+        <button type="button" id="toggle-flow" class="px-3 py-1 text-xs rounded border border-gray-300 hover:border-teal-700">Show flow & thank-you</button>
+    </div>
+    <div id="flow-mapping" class="section-card p-5 space-y-4 hidden">
+        <div class="flex items-center justify-between">
+            <div>
+                <p class="text-xs uppercase tracking-wide text-indigo-600 font-semibold">Experience-driven flow</p>
+                <h3 class="text-lg font-semibold">Show questions based on Q1 answer</h3>
+                <p class="text-sm text-gray-600">Flow uses the first question in the campaign. Pick follow-up questions per option.</p>
+            </div>
+            <span class="text-sm text-gray-500">Source: Q1</span>
+        </div>
+        {% if first_question and first_question.options %}
+        <div class="p-3 bg-amber-50 border border-amber-200 rounded text-sm">
+            <p class="font-semibold text-amber-800">Flow source</p>
+            <p class="text-amber-700">Q1: "{{ first_question.question_text_en }}"</p>
+            <p class="text-amber-700 text-xs mt-1">Options drive which follow-ups show.</p>
+        </div>
+        <form method="post" action="/questionnaire/{{ campaign.id }}/flow_mapping" class="space-y-4" enctype="multipart/form-data">
+            <div class="space-y-3" style="max-height: 550px; overflow: auto; padding-right: 4px;">
+                {% for opt in first_question.options %}
+                <div class="border border-gray-200 rounded p-3">
+                    <p class="text-xs font-semibold text-gray-700 mb-2">If Q1 = {{ opt.option_value }} ({{ opt.option_text_en }})</p>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        {% for q in questions %}
+                            {% if q.id != first_question.id %}
+                            <label class="flex items-center space-x-2 text-sm bg-gray-50 px-2 py-1 rounded" data-question-id="{{ q.id }}">
+                                <input type="checkbox" name="mapping_{{ opt.option_value }}" value="{{ q.id }}"
+                                    class="h-4 w-4 text-indigo-600"
+                                    {% if flow_map and flow_map.get(opt.option_value) and q.id in flow_map.get(opt.option_value) %}checked{% endif %}>
+                                <span class="flow-order-text" data-question-id="{{ q.id }}" data-question-text="{{ q.question_text_en }}">Q{{ q.order_index or loop.index }} - {{ q.question_text_en }}</span>
+                            </label>
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 pt-3 border-t">
+                <div>
+                    <label class="block text-sm font-semibold">Thank-you title</label>
+                    <input type="text" name="thank_you_title" value="{{ campaign.thank_you_title or '' }}" class="w-full border rounded px-3 py-2">
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold">Thank-you message</label>
+                    <textarea name="thank_you_message" rows="2" class="w-full border rounded px-3 py-2">{{ campaign.thank_you_message or '' }}</textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold">Thank-you image URL</label>
+                    <input type="text" name="thank_you_image_url" value="{{ campaign.thank_you_image_url or '' }}" class="w-full border rounded px-3 py-2" placeholder="https://...">
+                    <p class="text-xs text-gray-500 mt-1">Or upload an image below.</p>
+                    <input type="file" name="thank_you_image" accept="image/*" class="w-full border rounded px-3 py-2 mt-2 bg-white">
+                </div>
+            </div>
+            <div class="flex justify-end">
+                <button class="bg-indigo-600 text-white px-4 py-2 rounded shadow">Save flow & thank-you</button>
+            </div>
+        </form>
+        {% else %}
+        <div class="p-3 bg-amber-50 border border-amber-200 rounded text-sm">
+            <p class="font-semibold text-amber-800">Flow needs options</p>
+            <p class="text-amber-700">Flow mapping works only when the first question is a choice/rating with options. Add options to Q1 to enable.</p>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const postForm = async (form) => {
+            const fd = new FormData(form);
+            const res = await fetch(form.action, { method: 'POST', body: fd });
+            if (!res.ok) {
+                throw new Error(`Request failed: ${res.status}`);
+            }
+            return res;
+        };
+
+        const validateOptionForm = (form) => {
+            const label = form.querySelector('input[name="option_text_en"]');
+            const value = form.querySelector('input[name="option_value"]');
+            if (label && !label.value.trim()) return false;
+            if (value && !value.value.trim()) return false;
+            return true;
+        };
+
+        const toTitleCase = (str) => str.replace(/\b\w+/g, (word) => word.charAt(0).toUpperCase() + word.slice(1));
+        document.addEventListener('blur', (e) => {
+            const input = e.target.closest('input[data-title-case]');
+            if (!input) return;
+            const current = input.value || '';
+            const next = toTitleCase(current);
+            if (next !== current) input.value = next;
+        }, true);
+
+        const questionList = document.getElementById('question-list');
+
+        const updateQuestionNumbers = () => {
+            if (!questionList) return;
+            const cards = Array.from(questionList.querySelectorAll('.question-card'));
+            const indexMap = new Map();
+            cards.forEach((card, idx) => {
+                const order = idx + 1;
+                indexMap.set(card.dataset.questionId, order);
+                card.querySelectorAll('.question-order').forEach((label) => {
+                    const suffix = label.dataset.master === 'true' ? ' - Master linked' : '';
+                    label.textContent = `Q${order}${suffix}`;
+                });
+            });
+            document.querySelectorAll('.flow-order-text').forEach((label) => {
+                const qid = label.dataset.questionId;
+                if (!qid || !indexMap.has(qid)) return;
+                const order = indexMap.get(qid);
+                const text = label.dataset.questionText || label.textContent.replace(/^Q\\d+\\s*-\\s*/, '');
+                label.textContent = `Q${order} - ${text}`;
+            });
+        };
+
+        const bindQuestionMoveForms = () => {
+            if (!questionList) return;
+            questionList.querySelectorAll('form[action*="/questions/"][action$="/move"]').forEach((form) => {
+                if (form.dataset.bound === 'true') return;
+                form.dataset.bound = 'true';
+                form.addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const directionInput = form.querySelector('input[name="direction"]');
+                    const direction = directionInput ? directionInput.value : '';
+                    const card = form.closest('.question-card');
+                    const btn = form.querySelector('button');
+                    const original = btn ? btn.textContent : '';
+                    if (btn) { btn.disabled = true; btn.textContent = 'Moving...'; }
+                    try {
+                        const res = await fetch(form.action, { method: 'POST', body: new FormData(form) });
+                        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                        const cards = Array.from(questionList.querySelectorAll('.question-card'));
+                        const idx = cards.indexOf(card);
+                        if (idx === -1) throw new Error('Not found');
+                        if (direction === 'up' && idx > 0) {
+                            questionList.insertBefore(card, cards[idx - 1]);
+                        } else if (direction === 'down' && idx < cards.length - 1) {
+                            questionList.insertBefore(cards[idx + 1], card);
+                        }
+                        updateQuestionNumbers();
+                    } catch (err) {
+                        alert('Move failed. Please try again.');
+                    } finally {
+                        if (btn) { btn.disabled = false; btn.textContent = original || 'Move'; }
+                    }
+                });
+            });
+        };
+
+        document.querySelectorAll('.question-card').forEach(card => {
+            const optionForms = Array.from(card.querySelectorAll('form.option-update-form'));
+            const questionForm = card.querySelector('.question-update-form');
+            const addOptionForm = card.querySelector('.add-option-form');
+            const typeSelect = questionForm ? questionForm.querySelector('select[name="question_type"]') : null;
+            const placeholderWrap = questionForm ? questionForm.querySelector('.text-placeholder') : null;
+            const placeholderInput = questionForm ? questionForm.querySelector('input[name="placeholder_en"]') : null;
+            const togglePlaceholder = () => {
+                const isText = typeSelect && typeSelect.value === 'text';
+                if (placeholderWrap) placeholderWrap.classList.toggle('hidden', !isText);
+                if (!isText && placeholderInput) placeholderInput.value = '';
+            };
+            if (typeSelect) {
+                typeSelect.addEventListener('change', togglePlaceholder);
+                togglePlaceholder();
+            }
+            const getStatus = () => {
+                let el = card.querySelector('.save-status');
+                if (!el) {
+                    el = document.createElement('div');
+                    el.className = 'save-status text-xs mt-1';
+                    card.insertBefore(el, card.firstChild);
+                }
+                return el;
+            };
+            const showStatus = (message, type = 'success') => {
+                const el = getStatus();
+                el.textContent = message;
+                el.className = `save-status text-xs mt-1 ${type === 'error' ? 'text-rose-600' : 'text-emerald-700'}`;
+                setTimeout(() => { el.textContent = ''; }, 2000);
+            };
+
+            optionForms.forEach((form) => {
+                if (form.dataset.bound === 'true') return;
+                form.dataset.bound = 'true';
+                form.addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    if (!validateOptionForm(form)) {
+                        alert('Please fill option label and value.');
+                        return;
+                    }
+                    const btn = form.querySelector('button[type="submit"], button:not([type])');
+                    const original = btn ? btn.textContent : '';
+                    if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+                    try {
+                        await postForm(form);
+                        showStatus('Option updated');
+                    } catch (err) {
+                        alert('Failed to update option. Please try again.');
+                    } finally {
+                        if (btn) { btn.disabled = false; btn.textContent = original || 'Save'; }
+                    }
+                });
+            });
+
+            if (optionForms.length) {
+                const wrap = document.createElement('div');
+                wrap.className = 'mt-2 flex justify-end';
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.textContent = 'Save all options';
+                btn.className = 'px-3 py-1 text-xs rounded border border-gray-300 hover:border-teal-700';
+                btn.addEventListener('click', async () => {
+                    if (optionForms.some(f => !validateOptionForm(f))) {
+                        alert('Please fill all option labels and values before saving.');
+                        return;
+                    }
+                    btn.disabled = true;
+                    btn.textContent = 'Saving...';
+                    try {
+                        for (const f of optionForms) {
+                            await postForm(f);
+                        }
+                        showStatus('Options saved');
+                    } catch (e) {
+                        alert('Failed to save options. Please try again.');
+                        btn.disabled = false;
+                        btn.textContent = 'Save all options';
+                        return;
+                    }
+                    btn.disabled = false;
+                    btn.textContent = 'Save all options';
+                });
+                wrap.appendChild(btn);
+                card.appendChild(wrap);
+            }
+
+            if (questionForm) {
+                const saveBtn = questionForm.querySelector('button[type="submit"], button:not([type])');
+                const originalText = saveBtn ? saveBtn.textContent : '';
+
+                questionForm.addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    if (saveBtn) {
+                        saveBtn.disabled = true;
+                        saveBtn.textContent = 'Saving...';
+                    }
+
+                    try {
+                        if (typeSelect && typeSelect.value !== 'text' && placeholderInput) {
+                            placeholderInput.value = '';
+                        }
+                        await postForm(questionForm);
+
+                        if (addOptionForm) {
+                            const labelField = addOptionForm.querySelector('input[name="option_text_en"]');
+                            const valueField = addOptionForm.querySelector('input[name="option_value"]');
+                            const hasLabel = labelField && labelField.value.trim().length > 0;
+                            if (hasLabel) {
+                                if (valueField && !valueField.value.trim()) {
+                                    valueField.value = String(optionForms.length + 1);
+                                }
+                                await postForm(addOptionForm);
+                                showStatus('Option added. Reload to reorder or edit.');
+                                addOptionForm.reset();
+                            }
+                        }
+
+                        showStatus('Question updated');
+                    } catch (err) {
+                        alert('Failed to save question and options. Please try again.');
+                        if (saveBtn) {
+                            saveBtn.disabled = false;
+                            saveBtn.textContent = originalText || 'Save';
+                        }
+                        return;
+                    }
+                    if (saveBtn) {
+                        saveBtn.disabled = false;
+                        saveBtn.textContent = originalText || 'Save';
+                    }
+                });
+            }
+        });
+
+        bindQuestionMoveForms();
+        updateQuestionNumbers();
+
+        const toggleBtn = document.getElementById('toggle-flow');
+        const flowSection = document.getElementById('flow-mapping');
+        if (toggleBtn && flowSection) {
+            toggleBtn.addEventListener('click', () => {
+                const hidden = flowSection.classList.toggle('hidden');
+                toggleBtn.textContent = hidden ? 'Show flow & thank-you' : 'Hide flow & thank-you';
+            });
+        }
+    });
+</script>
+{% endblock %}
