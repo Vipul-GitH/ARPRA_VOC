@@ -9,7 +9,9 @@ from app import models
 from app.config import get_settings
 from app.database import Base, engine
 from app.routers import auth, campaigns, dashboard, feedback_public, master_questions, questionnaire, responses, tickets
-from app.services.booking_notifier import BookingNotifier
+# from app.services.booking_notifier import BookingNotifier
+from app.services.booking_sync import BookingSync
+from app.services.booking_campaign_sender import BookingCampaignSender
 import pytz
 from datetime import datetime
 
@@ -18,7 +20,9 @@ settings = get_settings()
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title=settings.app_name)
-notifier: BookingNotifier | None = None
+# notifier: BookingNotifier | None = None
+booking_sync: BookingSync | None = None
+campaign_sender: BookingCampaignSender | None = None
 
 app.add_middleware(
     CORSMiddleware,
@@ -65,28 +69,41 @@ app.include_router(master_questions.router, prefix="/master_questions")
 
 @app.on_event("startup")
 async def _start_notifier():
-    print("[BookingNotifier] startup hook entered")
-    global notifier
+    # BookingNotifier disabled for now.
+    print("[BookingSync] startup hook entered")
+    global booking_sync
     try:
-        notifier = BookingNotifier(
-            base_db_url=settings.database_url,
-            campaign_link="https://labmate.bhasinpathlabs.com:4667/feedback/CODE_2",
-            whatsapp_api=campaigns.WHATSAPP_SEND_API,
-            account_id=campaigns.WHATSAPP_ACCOUNT_ID,
-        )
-        notifier.start()
-        print("[BookingNotifier] registered from startup")
+        booking_sync = BookingSync(base_db_url=settings.database_url)
+        booking_sync.start()
+        print("[BookingSync] registered from startup")
     except Exception as exc:
-        notifier = None
-        print(f"[BookingNotifier] failed to start: {exc}")
+        booking_sync = None
+        print(f"[BookingSync] failed to start: {exc}")
+    print("[BookingCampaignSender] startup hook entered")
+    global campaign_sender
+    try:
+        campaign_sender = BookingCampaignSender(base_db_url=settings.database_url)
+        campaign_sender.start()
+        print("[BookingCampaignSender] registered from startup")
+    except Exception as exc:
+        campaign_sender = None
+        print(f"[BookingCampaignSender] failed to start: {exc}")
 
 
 @app.on_event("shutdown")
 async def _stop_notifier():
-    print("[BookingNotifier] shutdown hook entered")
-    global notifier
-    if notifier:
+    # BookingNotifier disabled for now.
+    print("[BookingSync] shutdown hook entered")
+    global booking_sync
+    if booking_sync:
         try:
-            notifier.stop()
+            booking_sync.stop()
         finally:
-            notifier = None
+            booking_sync = None
+    print("[BookingCampaignSender] shutdown hook entered")
+    global campaign_sender
+    if campaign_sender:
+        try:
+            campaign_sender.stop()
+        finally:
+            campaign_sender = None

@@ -37,7 +37,14 @@ def _phlebo_engine():
 def _prefill_from_booking(request: Request) -> dict:
     bookingid = request.query_params.get("bookingid")
     mobile_param = request.query_params.get("mobile")
+    name_param = request.query_params.get("name")
     prefill = {"name": "", "mobile_country": "+91", "mobile_number": "", "lab_id": ""}
+    if name_param:
+        prefill["name"] = name_param.strip()
+    if bookingid:
+        prefill["lab_id"] = bookingid.strip()
+    if mobile_param:
+        prefill["mobile_number"] = mobile_param.strip()
     if not bookingid and not mobile_param:
         return prefill
     try:
@@ -65,7 +72,8 @@ def _prefill_from_booking(request: Request) -> dict:
                     {"mob": mobile_param},
                 ).mappings().first()
             if row:
-                prefill["name"] = row.get("customername") or ""
+                if not prefill["name"]:
+                    prefill["name"] = row.get("customername") or ""
                 digits = "".join(ch for ch in (row.get("mobile") or "") if ch.isdigit())
                 if len(digits) > 10 and digits.startswith("91"):
                     digits = digits[-10:]
@@ -125,6 +133,7 @@ async def submit_form(token: str, request: Request, db: Session = Depends(get_db
     first_question = questions[0] if questions else None
     total_questions = len(questions)
     flow_rules_data = []
+    prefill = _prefill_from_booking(request)
     # Collect respondent info
     name = form.get("resp_name", "").strip()
     mobile_country = form.get("resp_mobile_country", "").strip() or "+91"
@@ -146,6 +155,7 @@ async def submit_form(token: str, request: Request, db: Session = Depends(get_db
             "flow_mapping_json": json.dumps(campaign.exp_flow_map or {}),
             "flow_source_question_id": first_question.id if first_question else None,
             "error": msg,
+            "prefill": prefill,
         },
             status_code=status,
         )

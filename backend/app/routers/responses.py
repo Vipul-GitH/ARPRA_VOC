@@ -1,3 +1,6 @@
+import ast
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
@@ -58,7 +61,57 @@ async def response_detail(
     response = db.query(FeedbackResponse).get(response_id)
     if not response:
         raise HTTPException(status_code=404, detail="Response not found")
+    answer_labels: dict[int, list[str]] = {}
+    for answer in response.answers:
+        raw = answer.selected_option_values
+        values: list[str] = []
+        if isinstance(raw, list):
+            values = [str(v) for v in raw]
+        elif isinstance(raw, str):
+            raw = raw.strip()
+            if raw:
+                try:
+                    parsed = json.loads(raw)
+                    if isinstance(parsed, list):
+                        values = [str(v) for v in parsed]
+                    else:
+                        values = [str(parsed)]
+                except Exception:
+                    try:
+                        parsed = ast.literal_eval(raw)
+                        if isinstance(parsed, (list, tuple)):
+                            values = [str(v) for v in parsed]
+                        else:
+                            values = [str(parsed)]
+                    except Exception:
+                        if "," in raw:
+                            values = [part.strip() for part in raw.split(",") if part.strip()]
+                        else:
+                            values = [raw]
+        if values:
+            cleaned: list[str] = []
+            for value in values:
+                value = value.strip().strip("[]").strip()
+                if value.startswith(("'", '"')) and value.endswith(("'", '"')) and len(value) >= 2:
+                    value = value[1:-1]
+                cleaned.append(value)
+            values = cleaned
+        elif raw is not None:
+            values = [str(raw)]
+        labels: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            opt = next(
+                (opt for opt in (answer.question.options or []) if str(opt.option_value) == value),
+                None,
+            )
+            label = opt.option_text_en if opt and opt.option_text_en else value
+            if label not in seen:
+                labels.append(label)
+                seen.add(label)
+        if labels:
+            answer_labels[answer.id] = labels
     return templates.TemplateResponse(
         "responses/detail.html",
-        {"request": request, "response": response, "user": user},
+        {"request": request, "response": response, "answer_labels": answer_labels, "user": user},
     )

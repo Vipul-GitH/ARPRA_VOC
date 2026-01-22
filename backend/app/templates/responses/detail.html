@@ -16,6 +16,9 @@
         {% set pii = response.pii_data_json or {} %}
         {% set phone = pii.get('contact') or ((pii.get('mobile_country') or '') ~ ' ' ~ (pii.get('mobile_number') or '')) %}
         <p><span class="font-semibold">Responder:</span> {{ pii.get('name','') }} {% if phone %} ({{ phone }}){% endif %}</p>
+        {% if pii.get('lab_id') %}
+        <p><span class="font-semibold">Lab ID:</span> {{ pii.get('lab_id') }}</p>
+        {% endif %}
     </div>
     <div class="bg-white p-4 rounded shadow border border-gray-200">
         <h3 class="font-semibold mb-2">Answers</h3>
@@ -25,7 +28,16 @@
                     <p class="font-semibold">{{ a.question.question_text_en }}</p>
                     <p class="text-sm text-gray-700">
                         {% if a.answer_text %}{{ a.answer_text }}{% endif %}
-                        {% if a.selected_option_values %}{{ a.selected_option_values }}{% endif %}
+                        {% set labels = (answer_labels.get(a.id) if answer_labels else None) %}
+                        {% if labels %}
+                            {% if a.answer_text %}<br>{% endif %}
+                            Selected:
+                            <ul class="list-disc ml-5">
+                                {% for label in labels %}
+                                    <li>{{ label }}</li>
+                                {% endfor %}
+                            </ul>
+                        {% endif %}
                         {% if a.follow_up_text %}<br><span class="text-xs text-gray-600">Follow-up: {{ a.follow_up_text }}</span>{% endif %}
                     </p>
                     <p class="text-xs text-gray-500">Sentiment: {{ a.sentiment or 'n/a' }}, Score: {{ a.score_value or 'n/a' }}</p>

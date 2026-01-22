@@ -35,7 +35,6 @@ async def create_master_question(
     question_type: str = Form(...),
     placeholder_en: str = Form(""),
     option_text_en: List[str] = Form([]),
-    option_value: List[str] = Form([]),
     sentiment: List[str] = Form([]),
     score_value: List[str] = Form([]),
     db: Session = Depends(get_db),
@@ -63,7 +62,7 @@ async def create_master_question(
         for idx, text in enumerate(option_text_en):
             if not text or not text.strip():
                 continue
-            val = option_value[idx] if idx < len(option_value) and option_value[idx].strip() else str(idx + 1)
+            val = str(idx + 1)
             sent = sentiment[idx] if idx < len(sentiment) and sentiment[idx] else "neutral"
             try:
                 score = int(score_value[idx]) if idx < len(score_value) and score_value[idx] not in (None, "") else 0
@@ -169,7 +168,6 @@ async def add_master_option(
     request: Request,
     master_id: int,
     option_text_en: List[str] = Form([]),
-    option_value: List[str] = Form([]),
     sentiment: List[str] = Form([]),
     score_value: List[str] = Form([]),
     db: Session = Depends(get_db),
@@ -178,11 +176,16 @@ async def add_master_option(
     master = db.query(MasterQuestion).get(master_id)
     if not master:
         raise HTTPException(status_code=404, detail="Master question not found")
+    existing_count = (
+        db.query(MasterQuestionOption)
+        .filter(MasterQuestionOption.master_question_id == master_id)
+        .count()
+    )
     created = []
     for idx, text in enumerate(option_text_en):
         if not text or not text.strip():
             continue
-        val = option_value[idx] if idx < len(option_value) and option_value[idx].strip() else str(idx + 1)
+        val = str(existing_count + idx + 1)
         sent = sentiment[idx] if idx < len(sentiment) and sentiment[idx] else "neutral"
         try:
             score = int(score_value[idx]) if idx < len(score_value) and score_value[idx] not in (None, "") else 0
@@ -218,7 +221,6 @@ async def update_master_option(
     master_id: int,
     option_id: int,
     option_text_en: str = Form(...),
-    option_value: str = Form(...),
     sentiment: str = Form("neutral"),
     score_value: str = Form("0"),
     db: Session = Depends(get_db),
@@ -228,7 +230,6 @@ async def update_master_option(
     if not opt or opt.master_question_id != master_id:
         raise HTTPException(status_code=404, detail="Option not found")
     opt.option_text_en = option_text_en
-    opt.option_value = option_value
     opt.sentiment = sentiment
     try:
         opt.score_value = int(score_value) if score_value not in (None, "") else 0

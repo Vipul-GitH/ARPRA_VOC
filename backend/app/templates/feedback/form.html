@@ -4,26 +4,121 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ campaign.header_title or campaign.name }} | Dr Bhasin's Lab Feedback</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <style>
-        :root { --brand: #054e5d; --accent: #57b697; --text: #000000; }
+        :root {
+            --brand: #08333a;
+            --accent: #3b8f7b;
+            --text: #111827;
+            --ink: #0f172a;
+            --mist: #e2e8f0;
+        }
         .flow-hidden { display: none !important; }
         body {
-            background: radial-gradient(circle at 10% 10%, rgba(5,78,93,0.1), transparent 35%),
-                        radial-gradient(circle at 90% 20%, rgba(87,182,151,0.08), transparent 30%),
-                        #f7fafc;
+            font-family: "Space Grotesk", "Segoe UI", Arial, sans-serif;
+            background:
+                radial-gradient(120% 120% at 10% 0%, rgba(56, 189, 248, 0.12), transparent 40%),
+                radial-gradient(120% 140% at 90% 10%, rgba(16, 185, 129, 0.12), transparent 50%),
+                linear-gradient(180deg, #f8fafc, #eef2f7);
+            color: var(--text);
+        }
+        h1, h2, h3, .question-title {
+            font-family: "Fraunces", "Georgia", serif;
+            color: var(--ink);
+        }
+        .page-wrap {
+            padding-bottom: 40px;
+        }
+        .hero-card {
+            background: #ffffff;
+            border: 1px solid rgba(15, 23, 42, 0.12);
+            box-shadow: 0 18px 42px rgba(15, 23, 42, 0.08);
+            color: var(--text);
+        }
+        .hero-card p {
+            color: #475569;
+        }
+        .form-shell {
+            background: #ffffff;
+            border: 1px solid rgba(15, 23, 42, 0.08);
+            box-shadow: 0 18px 42px rgba(15, 23, 42, 0.08);
+        }
+        .question-step,
+        .question-block {
+            border: 1px solid rgba(15, 23, 42, 0.08);
+            box-shadow: 0 10px 20px rgba(15, 23, 42, 0.05);
+        }
+        .option-label {
+            color: var(--ink);
+        }
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 11px;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            background: rgba(59, 143, 123, 0.15);
+            color: #0f3d43;
+        }
+        .wizard-actions {
+            gap: 12px;
+        }
+        .btn-primary {
+            background: var(--brand);
+            color: #fff;
+            padding: 12px 18px;
+            border-radius: 12px;
+            font-weight: 600;
+            box-shadow: 0 10px 25px rgba(8, 51, 58, 0.2);
+        }
+        .btn-outline {
+            border: 1px solid var(--brand);
+            color: var(--brand);
+            padding: 12px 18px;
+            border-radius: 12px;
+            font-weight: 600;
+            background: #fff;
+        }
+        .fade-in {
+            animation: fadeInUp 0.5s ease both;
+        }
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @media (max-width: 768px) {
+            .page-wrap { padding-left: 12px; padding-right: 12px; }
+            .hero-card { padding: 18px !important; }
+            .hero-card h1 { font-size: 1.5rem !important; }
+            .wizard-actions {
+                flex-direction: column;
+                align-items: stretch !important;
+            }
+            .wizard-actions button {
+                width: 100%;
+            }
+        }
+        @media (max-width: 640px) {
+            .form-shell { padding: 16px !important; }
+            h1 { font-size: 1.35rem !important; }
         }
     </style>
 </head>
 <body class="min-h-screen text-[var(--text)]">
-<div class="max-w-3xl mx-auto p-4">
-        <div class="bg-white text-[var(--text)] p-5 rounded-xl shadow border border-gray-200">
+<div class="page-wrap max-w-4xl mx-auto p-4">
+        <div class="hero-card text-[var(--text)] p-6 rounded-2xl fade-in">
             <div class="flex items-center space-x-3">
                 <img src="/static/img/dr-bhasin-logo.png" alt="Dr Bhasin's Lab" class="h-16 w-auto object-contain" style="max-width: 180px;">
             <div>
-                <p class="text-xs uppercase tracking-[0.18em] text-gray-500">Voice of Customer</p>
+                <span class="pill">Voice of Customer</span>
                 <h1 class="text-2xl font-bold">{{ campaign.header_title or campaign.name }}</h1>
-                <p class="text-sm text-gray-600">Estimated time: {{ campaign.estimated_fill_time_seconds }} seconds • {{ total_questions }} questions</p>
+                <p class="text-sm">Estimated time: {{ campaign.estimated_fill_time_seconds }} seconds • {{ total_questions }} questions</p>
             </div>
         </div>
 </div>
@@ -63,7 +158,7 @@
     </datalist>
 
     {% if campaign.layout_type == 'one_question_per_page' %}
-    <div class="mt-4 bg-white border border-gray-200 text-[var(--text)] p-5 rounded-xl shadow-sm">
+    <div class="mt-4 form-shell text-[var(--text)] p-6 rounded-2xl fade-in">
         <div class="flex items-center justify-between mb-2">
             <div class="w-full bg-gray-100 rounded-full h-2 mr-3 overflow-hidden">
                 <div id="progressBar" class="h-2 rounded-full transition-all duration-300" style="width: calc(100% / {{ total_questions }}); background: var(--brand);"></div>
@@ -72,7 +167,7 @@
         </div>
         <form id="wizardForm" method="post" action="/feedback/{{ token }}" class="space-y-3">
             {% for q in questions %}
-            <div class="question-step {% if not loop.first %}hidden{% endif %} space-y-3 bg-white p-4 rounded-lg border border-gray-200" data-index="{{ loop.index0 }}" data-question-id="{{ q.id }}">
+            <div class="question-step {% if not loop.first %}hidden{% endif %} space-y-3 bg-white p-4 rounded-xl" data-index="{{ loop.index0 }}" data-question-id="{{ q.id }}">
                     <div class="flex justify-between text-sm text-gray-600">
                         <span>Q{{ loop.index }} of {{ total_questions }}</span>
                         {% if q.is_required %}<span class="text-white font-semibold px-2 py-1 rounded-full" style="background: var(--brand);">Required</span>{% endif %}
@@ -117,7 +212,7 @@
                 {% endif %}
             </div>
             {% endfor %}
-            <div class="question-step space-y-3 bg-white p-4 rounded-lg border border-gray-200" data-index="{{ questions|length }}" data-question-id="0" data-personal="true">
+            <div class="question-step space-y-3 bg-white p-4 rounded-xl" data-index="{{ questions|length }}" data-question-id="0" data-personal="true">
                 <div class="flex justify-between text-sm text-gray-600">
                     <span>Personal Information</span>
                     <span class="text-xs text-gray-500">Required</span>
@@ -145,11 +240,11 @@
                     </div>
                 </div>
             </div>
-            <div class="mt-4 flex justify-between items-center">
-                <button type="button" id="prevBtn" class="px-4 py-2 rounded border font-semibold hidden transition transform hover:-translate-y-0.5" style="border:1px solid var(--brand); color: var(--brand);">Previous</button>
+            <div class="mt-4 flex justify-between items-center wizard-actions">
+                <button type="button" id="prevBtn" class="btn-outline hidden transition transform hover:-translate-y-0.5">Previous</button>
                 <div class="flex-1"></div>
-                <button type="button" id="nextBtn" class="px-4 py-2 rounded text-white font-semibold shadow transition transform hover:-translate-y-0.5" style="background: var(--brand);">Next</button>
-                <button type="submit" id="submitBtn" class="px-4 py-2 rounded text-white font-semibold shadow transition transform hover:-translate-y-0.5 hidden" style="background: var(--brand);">Send Feedback</button>
+                <button type="button" id="nextBtn" class="btn-primary transition transform hover:-translate-y-0.5">Next</button>
+                <button type="submit" id="submitBtn" class="btn-primary transition transform hover:-translate-y-0.5 hidden">Send Feedback</button>
             </div>
         </form>
     </div>
@@ -298,10 +393,27 @@
             applyFlow();
         })();
     </script>
+    <script>
+        (function() {
+            document.querySelectorAll('form[action^="/feedback/"]').forEach(form => {
+                form.addEventListener('submit', (e) => {
+                    if (form.dataset.submitting === 'true') {
+                        e.preventDefault();
+                        return;
+                    }
+                    form.dataset.submitting = 'true';
+                    form.querySelectorAll('button[type="submit"]').forEach(btn => {
+                        btn.disabled = true;
+                        btn.classList.add('opacity-70', 'cursor-not-allowed');
+                    });
+                });
+            });
+        })();
+    </script>
     {% else %}
-    <form method="post" action="/feedback/{{ token }}" class="mt-4 space-y-4">
+    <form method="post" action="/feedback/{{ token }}" class="mt-4 form-shell p-6 rounded-2xl space-y-4 fade-in">
         {% for q in questions %}
-        <div class="bg-white p-4 rounded shadow-sm border border-gray-200 question-block" data-question-id="{{ q.id }}">
+        <div class="form-shell p-4 rounded-xl question-block" data-question-id="{{ q.id }}">
                 <div class="flex justify-between text-sm text-gray-600">
                     <span>Q{{ loop.index }} of {{ total_questions }}</span>
                     {% if q.is_required %}<span class="text-white font-semibold px-2 py-1 rounded-full" style="background: var(--brand);">Required</span>{% endif %}
@@ -346,7 +458,7 @@
             {% endif %}
         </div>
         {% endfor %}
-        <div class="bg-white p-4 rounded shadow-sm border border-gray-200 space-y-3">
+        <div class="form-shell p-4 rounded-xl space-y-3">
             <div class="flex justify-between text-sm text-gray-600">
                 <span>Personal Information</span>
                 <span class="text-xs text-gray-500">Required</span>
@@ -354,19 +466,19 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                     <label class="block text-sm font-semibold">Name *</label>
-                    <input type="text" name="resp_name" class="w-full border rounded px-3 py-2" required>
+                    <input type="text" name="resp_name" class="w-full border rounded px-3 py-2" required value="{{ prefill.name or '' }}">
                 </div>
                 <div class="md:col-span-2">
                     <label class="block text-sm font-semibold">Mobile *</label>
                     <div class="flex gap-2">
-                        <input type="text" name="resp_mobile_country" list="country-codes" value="+91" class="w-24 border rounded px-3 py-2" placeholder="+91">
-                        <input type="text" name="resp_mobile_number" class="flex-1 border rounded px-3 py-2" required placeholder="9876543210">
+                        <input type="text" name="resp_mobile_country" list="country-codes" value="{{ prefill.mobile_country or '+91' }}" class="w-24 border rounded px-3 py-2" placeholder="+91">
+                        <input type="text" name="resp_mobile_number" class="flex-1 border rounded px-3 py-2" required placeholder="9876543210" value="{{ prefill.mobile_number or '' }}">
                     </div>
                     <p class="text-xs text-gray-500 mt-1">Pick a code or type one. If India, enter 10 digits.</p>
                 </div>
                 <div>
                     <label class="block text-sm font-semibold">Lab ID (optional)</label>
-                    <input type="text" name="resp_lab_id" class="w-full border rounded px-3 py-2">
+                    <input type="text" name="resp_lab_id" class="w-full border rounded px-3 py-2" value="{{ prefill.lab_id or '' }}">
                 </div>
                 <div>
                     <label class="block text-sm font-semibold">Date of visit/test (optional)</label>
@@ -374,7 +486,7 @@
                 </div>
             </div>
         </div>
-        <button type="submit" class="w-full text-white py-3 rounded-lg shadow font-semibold transition transform hover:-translate-y-0.5" style="background: var(--brand);">Send Feedback</button>
+        <button type="submit" class="w-full btn-primary transition transform hover:-translate-y-0.5">Send Feedback</button>
     </form>
     <script>
         (function() {

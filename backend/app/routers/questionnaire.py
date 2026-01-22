@@ -188,7 +188,6 @@ async def add_question(
     placeholder_en: str = Form(""),
     is_required: bool = Form(False),
     option_text_en: List[str] = Form([]),
-    option_value: List[str] = Form([]),
     sentiment: List[str] = Form([]),
     score_value: List[str] = Form([]),
     follow_up_label: List[str] = Form([]),
@@ -223,7 +222,7 @@ async def add_question(
         for idx, text in enumerate(option_text_en):
             if not text or not text.strip():
                 continue
-            val = option_value[idx] if idx < len(option_value) and option_value[idx].strip() else str(idx + 1)
+            val = str(idx + 1)
             sent = sentiment[idx] if idx < len(sentiment) and sentiment[idx] else "neutral"
             try:
                 score = int(score_value[idx]) if idx < len(score_value) and score_value[idx] not in (None, "") else 0
@@ -276,7 +275,6 @@ async def add_option(
     campaign_id: int,
     question_id: int,
     option_text_en: str = Form(...),
-    option_value: str = Form(...),
     sentiment: str = Form("neutral"),
     score_value: str = Form("0"),
     follow_up_label: str = Form(""),
@@ -299,7 +297,7 @@ async def add_option(
     option = CampaignQuestionOption(
         campaign_question_id=question_id,
         option_text_en=option_text_en,
-        option_value=option_value,
+        option_value=str(current_count + 1),
         sentiment=sentiment,
         score_value=score_val,
         order_index=current_count + 1,
@@ -491,7 +489,6 @@ async def update_option(
     campaign_id: int,
     option_id: int,
     option_text_en: str = Form(...),
-    option_value: str = Form(...),
     sentiment: str = Form("neutral"),
     score_value: str = Form("0"),
     follow_up_label: str = Form(""),
@@ -502,7 +499,6 @@ async def update_option(
     if not option or option.question.campaign_id != campaign_id:
         raise HTTPException(status_code=404, detail="Option not found")
     option.option_text_en = option_text_en
-    option.option_value = option_value
     option.sentiment = sentiment
     try:
         option.score_value = int(score_value) if score_value not in (None, "") else 0

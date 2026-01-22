@@ -42,9 +42,8 @@
                 </div>
                 <div id="master-option-rows" class="space-y-2">
                     {% for i in range(2) %}
-                    <div class="grid grid-cols-1 md:grid-cols-5 gap-2 option-row">
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-2 option-row">
                         <input type="text" name="option_text_en" placeholder="Label" class="border rounded px-2 py-1 md:col-span-2">
-                        <input type="text" name="option_value" placeholder="Value" class="border rounded px-2 py-1">
                         <select name="sentiment" class="border rounded px-2 py-1">
                             <option value="positive">Positive</option>
                             <option value="neutral" selected>Neutral</option>
@@ -55,7 +54,7 @@
                     </div>
                     {% endfor %}
                 </div>
-                <p class="text-xs text-gray-500">Options are used only for choice/rating questions. Values default to 1..N if left blank.</p>
+                <p class="text-xs text-gray-500">Options are used only for choice/rating questions. Values are auto-assigned.</p>
             </div>
             <div class="flex justify-end">
                 <button class="btn-primary">Create</button>
@@ -125,9 +124,8 @@
                 <form method="post" action="/master_questions/{{ m.id }}/options/add" class="master-option-form space-y-2" data-master-id="{{ m.id }}">
                     <div id="opt-rows-{{ m.id }}" class="space-y-2">
                         {% for i in range(2) %}
-                        <div class="grid grid-cols-1 md:grid-cols-5 gap-2 text-xs option-row">
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-2 text-xs option-row">
                             <input type="text" name="option_text_en" placeholder="Label" class="border rounded px-2 py-1 md:col-span-2">
-                            <input type="text" name="option_value" placeholder="Value" class="border rounded px-2 py-1">
                             <select name="sentiment" class="border rounded px-2 py-1">
                                 <option value="positive">Positive</option>
                                 <option value="neutral" selected>Neutral</option>
@@ -145,10 +143,9 @@
                 </form>
                 <div class="flex flex-col gap-2">
                     {% for o in m.options %}
-                        <div class="grid grid-cols-1 md:grid-cols-6 gap-2 items-center text-xs bg-gray-50 px-2 py-1 rounded">
+                        <div class="grid grid-cols-1 md:grid-cols-5 gap-2 items-center text-xs bg-gray-50 px-2 py-1 rounded">
                             <form method="post" action="/master_questions/{{ m.id }}/options/{{ o.id }}/update" class="contents option-update-form">
                                 <input type="text" name="option_text_en" value="{{ o.option_text_en }}" class="border rounded px-2 py-1 md:col-span-2" required>
-                                <input type="text" name="option_value" value="{{ o.option_value }}" class="border rounded px-2 py-1" required>
                                 <select name="sentiment" class="border rounded px-2 py-1">
                                     <option value="positive" {% if o.sentiment=='positive' %}selected{% endif %}>Positive</option>
                                     <option value="neutral" {% if o.sentiment=='neutral' %}selected{% endif %}>Neutral</option>
@@ -345,12 +342,6 @@
                 }
                 if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
                 try {
-                    // auto-fill option values if blank
-                    rows?.querySelectorAll('.option-row').forEach((row, idx) => {
-                        const label = row.querySelector('input[name=\"option_text_en\"]');
-                        const value = row.querySelector('input[name=\"option_value\"]');
-                        if (label && label.value.trim() && value && !value.value.trim()) value.value = String(idx + 1);
-                    });
                     await postForm(newForm);
                     newForm.reset();
                     // reset rows to two empty rows
@@ -403,11 +394,6 @@
                     const btn = addOptForm.querySelector('button[type=\"submit\"], button:not([type])');
                     if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
                     try {
-                        addOptForm.querySelectorAll('.option-row').forEach((row, idx) => {
-                            const label = row.querySelector('input[name=\"option_text_en\"]');
-                            const value = row.querySelector('input[name=\"option_value\"]');
-                            if (label && label.value.trim() && value && !value.value.trim()) value.value = String(idx + 1);
-                        });
                         await postForm(addOptForm);
                         setStatus(card, 'Options added');
                         addOptForm.reset();
@@ -453,11 +439,6 @@
                         await postForm(qForm);
 
                         if (addOptForm && validateOptionRows(addOptForm)) {
-                            addOptForm.querySelectorAll('.option-row').forEach((row, idx) => {
-                                const label = row.querySelector('input[name=\"option_text_en\"]');
-                                const value = row.querySelector('input[name=\"option_value\"]');
-                                if (label && label.value.trim() && value && !value.value.trim()) value.value = String(idx + 1);
-                            });
                             await postForm(addOptForm);
                             addOptForm.reset();
                         }
