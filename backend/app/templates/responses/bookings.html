@@ -1,0 +1,108 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card p-4 space-y-4">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+            <p class="text-xs uppercase tracking-wide text-[var(--primary,#054e5d)] font-semibold">Responses</p>
+            <h2 class="text-xl font-bold">Bookings status</h2>
+        </div>
+        <div class="flex gap-2">
+            <a href="/responses/" class="inline-flex items-center justify-center px-4 py-2 rounded text-sm font-semibold"
+               style="min-width:110px; background:#f8fafc; color:#0a5c65; border:1px solid #d1d5db;">Responses</a>
+            <a href="/responses/bookings" class="inline-flex items-center justify-center px-4 py-2 rounded shadow-sm text-sm font-semibold"
+               style="min-width:110px; background:#0a5c65; color:#ffffff; border:1px solid #0a5c65;">Bookings</a>
+        </div>
+    </div>
+    <form method="get" class="flex flex-wrap gap-2 items-center" data-auto-submit="true">
+        <input
+            type="text"
+            name="q"
+            value="{{ search }}"
+            placeholder="Search booking id, name, mobile"
+            class="border rounded px-3 py-2 text-sm w-full md:w-72"
+        >
+        <input type="date" name="start_date" value="{{ start_date }}" class="border rounded px-3 py-2 text-sm">
+        <input type="date" name="end_date" value="{{ end_date }}" class="border rounded px-3 py-2 text-sm">
+        <select name="per_page" class="border rounded px-3 py-2 text-sm">
+            {% for size in [25, 50, 100, 200] %}
+                <option value="{{ size }}" {% if per_page == size %}selected{% endif %}>{{ size }}/page</option>
+            {% endfor %}
+        </select>
+        <button class="btn-primary text-sm px-4 py-2 hidden">Search</button>
+    </form>
+    <script>
+        (function() {
+            const form = document.querySelector('form[data-auto-submit="true"]');
+            if (!form) return;
+            const submit = () => form.requestSubmit();
+            form.querySelectorAll('select, input[type="date"]').forEach(el => {
+                el.addEventListener('change', submit);
+            });
+        })();
+    </script>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div class="bg-white border border-gray-200 rounded p-3 shadow-sm">
+            <p class="text-xs text-gray-500 uppercase tracking-wide">Total bookings</p>
+            <p class="text-2xl font-semibold">{{ totals.total or 0 }}</p>
+        </div>
+        <div class="bg-white border border-gray-200 rounded p-3 shadow-sm">
+            <p class="text-xs text-gray-500 uppercase tracking-wide">Link sent</p>
+            <p class="text-2xl font-semibold">{{ totals.sent_count or 0 }}</p>
+        </div>
+        <div class="bg-white border border-gray-200 rounded p-3 shadow-sm">
+            <p class="text-xs text-gray-500 uppercase tracking-wide">Response submitted</p>
+            <p class="text-2xl font-semibold">{{ totals.responded_count or 0 }}</p>
+        </div>
+    </div>
+    <table class="w-full bg-white rounded shadow text-sm border border-gray-200">
+        <thead class="bg-gray-50">
+            <tr>
+                <th class="text-left p-2">Booking ID</th>
+                <th class="text-left p-2">Name</th>
+                <th class="text-left p-2">Mobile</th>
+                <th class="text-center p-2">Link Sent</th>
+                <th class="text-center p-2">Response</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for b in bookings %}
+            <tr class="border-t">
+                <td class="p-2">{{ b.bookingid }}</td>
+                <td class="p-2">{{ b.customername }}</td>
+                <td class="p-2">{{ b.mobile }}</td>
+                <td class="p-2 text-center">
+                    {% if b.isCampaingsend %}
+                        <span class="px-2 py-1 rounded-full text-xs bg-emerald-100 text-emerald-700">Yes</span>
+                    {% else %}
+                        <span class="px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-700">No</span>
+                    {% endif %}
+                </td>
+                <td class="p-2 text-center">
+                    {% if b.response_id %}
+                        <a class="px-2 py-1 rounded-full text-xs bg-indigo-100 text-indigo-700 inline-block" href="/responses/{{ b.response_id }}">View</a>
+                    {% elif b.isResponseSubmitted %}
+                        <span class="px-2 py-1 rounded-full text-xs bg-indigo-100 text-indigo-700">Yes</span>
+                    {% else %}
+                        <span class="px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-700">No</span>
+                    {% endif %}
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
+        <div class="text-gray-600">
+            Showing {{ bookings|length }} of {{ total }}
+        </div>
+        <div class="flex gap-2">
+            {% if page > 1 %}
+                <a class="px-3 py-1 border rounded" href="?q={{ search }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}&page={{ page - 1 }}">Prev</a>
+            {% endif %}
+            <span class="px-3 py-1 border rounded bg-gray-50">Page {{ page }}</span>
+            {% if page * per_page < total %}
+                <a class="px-3 py-1 border rounded" href="?q={{ search }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}&page={{ page + 1 }}">Next</a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -42,19 +42,20 @@
                 </div>
                 <div id="master-option-rows" class="space-y-2">
                     {% for i in range(2) %}
-                    <div class="grid grid-cols-1 md:grid-cols-4 gap-2 option-row">
+                    <div class="grid grid-cols-1 md:grid-cols-5 gap-2 option-row">
                         <input type="text" name="option_text_en" placeholder="Label" class="border rounded px-2 py-1 md:col-span-2">
+                        <input type="text" name="option_value" placeholder="Value" class="border rounded px-2 py-1">
                         <select name="sentiment" class="border rounded px-2 py-1">
                             <option value="positive">Positive</option>
                             <option value="neutral" selected>Neutral</option>
                             <option value="negative">Negative</option>
                         </select>
-                        <input type="number" name="score_value" value="0" class="border rounded px-2 py-1" placeholder="Score">
+                        <input type="hidden" name="score_value" value="0">
                         <button type="button" class="remove-option px-2 py-1 text-xs text-rose-600 border border-rose-200 rounded">Remove</button>
                     </div>
                     {% endfor %}
                 </div>
-                <p class="text-xs text-gray-500">Options are used only for choice/rating questions. Values are auto-assigned.</p>
+                <p class="text-xs text-gray-500">Options are used only for choice/rating questions. Values are manual.</p>
             </div>
             <div class="flex justify-end">
                 <button class="btn-primary">Create</button>
@@ -124,14 +125,15 @@
                 <form method="post" action="/master_questions/{{ m.id }}/options/add" class="master-option-form space-y-2" data-master-id="{{ m.id }}">
                     <div id="opt-rows-{{ m.id }}" class="space-y-2">
                         {% for i in range(2) %}
-                        <div class="grid grid-cols-1 md:grid-cols-4 gap-2 text-xs option-row">
+                        <div class="grid grid-cols-1 md:grid-cols-5 gap-2 text-xs option-row">
                             <input type="text" name="option_text_en" placeholder="Label" class="border rounded px-2 py-1 md:col-span-2">
+                            <input type="text" name="option_value" placeholder="Value" class="border rounded px-2 py-1">
                             <select name="sentiment" class="border rounded px-2 py-1">
                                 <option value="positive">Positive</option>
                                 <option value="neutral" selected>Neutral</option>
                                 <option value="negative">Negative</option>
                             </select>
-                            <input type="number" name="score_value" value="0" class="border rounded px-2 py-1" placeholder="Score">
+                            <input type="hidden" name="score_value" value="0">
                             <button type="button" class="remove-option px-2 py-1 text-xs text-rose-600 border border-rose-200 rounded">Remove</button>
                         </div>
                         {% endfor %}
@@ -143,15 +145,16 @@
                 </form>
                 <div class="flex flex-col gap-2">
                     {% for o in m.options %}
-                        <div class="grid grid-cols-1 md:grid-cols-5 gap-2 items-center text-xs bg-gray-50 px-2 py-1 rounded">
+                        <div class="grid grid-cols-1 md:grid-cols-6 gap-2 items-center text-xs bg-gray-50 px-2 py-1 rounded">
                             <form method="post" action="/master_questions/{{ m.id }}/options/{{ o.id }}/update" class="contents option-update-form">
                                 <input type="text" name="option_text_en" value="{{ o.option_text_en }}" class="border rounded px-2 py-1 md:col-span-2" required>
+                                <input type="text" name="option_value" value="{{ o.option_value }}" class="border rounded px-2 py-1" required>
                                 <select name="sentiment" class="border rounded px-2 py-1">
                                     <option value="positive" {% if o.sentiment=='positive' %}selected{% endif %}>Positive</option>
                                     <option value="neutral" {% if o.sentiment=='neutral' %}selected{% endif %}>Neutral</option>
                                     <option value="negative" {% if o.sentiment=='negative' %}selected{% endif %}>Negative</option>
                                 </select>
-                                <input type="number" name="score_value" value="{{ o.score_value or 0 }}" class="border rounded px-2 py-1" placeholder="Score">
+                                <input type="hidden" name="score_value" value="0">
                                 <div class="flex space-x-2">
                                     <button class="bg-emerald-600 text-white px-3 py-1 rounded shadow-sm">Save</button>
                                 </div>
@@ -320,7 +323,15 @@
 
         const validateOptionRows = (form) => {
             const rows = form ? form.querySelectorAll('.option-row') : [];
-            return Array.from(rows).some(r => (r.querySelector('input[name=\"option_text_en\"]')?.value || '').trim());
+            let hasComplete = false;
+            for (const row of Array.from(rows)) {
+                const label = (row.querySelector('input[name=\"option_text_en\"]')?.value || '').trim();
+                const value = (row.querySelector('input[name=\"option_value\"]')?.value || '').trim();
+                if (!label && !value) continue;
+                if (!label || !value) return false;
+                hasComplete = true;
+            }
+            return hasComplete;
         };
 
         // New master creation (question + options) without reload
@@ -334,7 +345,7 @@
                 const typeSelect = document.getElementById('master_question_type');
                 const needsOptions = typeSelect && (typeSelect.value || '').startsWith('mcq');
                 if (needsOptions && !validateOptionRows(newForm)) {
-                    alert('Please add at least one option for this question type.');
+                    alert('Please add at least one option with label and value.');
                     return;
                 }
                 if (typeSelect && typeSelect.value !== 'text' && placeholderInput) {
@@ -388,7 +399,7 @@
                 addOptForm.addEventListener('submit', async (e) => {
                     e.preventDefault();
                     if (!validateOptionRows(addOptForm)) {
-                        alert('Please add at least one option.');
+                        alert('Please add at least one option with label and value.');
                         return;
                     }
                     const btn = addOptForm.querySelector('button[type=\"submit\"], button:not([type])');

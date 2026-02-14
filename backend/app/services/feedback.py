@@ -8,23 +8,23 @@ from app.models import FeedbackAnswer, FeedbackResponse, FeedbackTicket
 
 
 def compute_scores(response: FeedbackResponse, answers: List[FeedbackAnswer]):
-    scored_values = [a.score_value for a in answers if a.score_value is not None]
-    if scored_values:
-        response.overall_score = int(sum(scored_values) / len(scored_values))
-    negative = any(a.sentiment == "negative" or (a.score_value is not None and a.score_value <= 2) for a in answers)
-    response.overall_sentiment = "negative" if negative else "positive"
-    rating_answers = [a for a in answers if a.question.is_overall_rating]
-    if rating_answers:
-        response.overall_rating_value = rating_answers[0].score_value
+    # Scoring disabled; use only sentiment.
+    response.overall_score = None
+    response.overall_rating_value = None
 
-    text_present = any(a.answer_text for a in answers)
-    if negative or (response.overall_rating_value and response.overall_rating_value <= 2):
+    has_negative = any(a.sentiment == "negative" for a in answers)
+    has_neutral = any(a.sentiment == "neutral" for a in answers)
+
+    if has_negative:
+        response.overall_sentiment = "negative"
         response.is_complaint = True
-        response.status = "under_review"
-    elif text_present:
+        response.status = "ticket_created"
+    elif has_neutral:
+        response.overall_sentiment = "neutral"
         response.needs_manual_review = True
-        response.status = "under_review"
+        response.status = "manual_review"
     else:
+        response.overall_sentiment = "positive"
         response.status = "auto_processed"
 
 

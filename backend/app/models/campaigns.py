@@ -30,6 +30,8 @@ class Campaign(Base):
     header_title = Column(String(255))
     # Flow mapping: { "option_value": [question_ids...] } for Exp_Lab master question
     exp_flow_map = Column(JSON)
+    # Skip logic per campaign: {"question_order": int, "mode": "allow"|"block", "values": [str]}
+    skip_logic = Column(JSON)
     # Custom thank-you content per campaign
     thank_you_title = Column(String(255))
     thank_you_message = Column(String(2000))

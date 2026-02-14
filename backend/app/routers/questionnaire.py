@@ -158,6 +158,7 @@ async def view_questionnaire(
     first_question = questions[0] if questions else None
     flow_rules = []
     flow_map = campaign.exp_flow_map or {}
+    skip_logic = campaign.skip_logic or {}
     master_questions = db.query(MasterQuestion).filter(MasterQuestion.is_active.is_(True)).order_by(MasterQuestion.code).all()
     db.commit()
     return templates.TemplateResponse(
@@ -171,6 +172,7 @@ async def view_questionnaire(
             "channels": [],
             "flow_rules": flow_rules,
             "flow_map": flow_map,
+            "skip_logic": skip_logic,
             "exp_lab_master": exp_master,
             "campaign_master_question": campaign_master_question,
             "master_questions": master_questions,
@@ -224,10 +226,7 @@ async def add_question(
                 continue
             val = str(idx + 1)
             sent = sentiment[idx] if idx < len(sentiment) and sentiment[idx] else "neutral"
-            try:
-                score = int(score_value[idx]) if idx < len(score_value) and score_value[idx] not in (None, "") else 0
-            except (ValueError, TypeError):
-                score = 0
+            score = 0
             fu = follow_up_label[idx].strip() if idx < len(follow_up_label) and follow_up_label[idx] else None
             db.add(
                 CampaignQuestionOption(
@@ -275,6 +274,7 @@ async def add_option(
     campaign_id: int,
     question_id: int,
     option_text_en: str = Form(...),
+    option_value: str = Form(""),
     sentiment: str = Form("neutral"),
     score_value: str = Form("0"),
     follow_up_label: str = Form(""),
@@ -289,15 +289,13 @@ async def add_option(
         .filter(CampaignQuestionOption.campaign_question_id == question_id)
         .count()
     )
-    try:
-        score_val = int(score_value) if score_value not in (None, "") else 0
-    except (ValueError, TypeError):
-        score_val = 0
+    score_val = 0
 
+    val = option_value.strip() if option_value and option_value.strip() else str(current_count + 1)
     option = CampaignQuestionOption(
         campaign_question_id=question_id,
         option_text_en=option_text_en,
-        option_value=str(current_count + 1),
+        option_value=val,
         sentiment=sentiment,
         score_value=score_val,
         order_index=current_count + 1,
@@ -489,6 +487,7 @@ async def update_option(
     campaign_id: int,
     option_id: int,
     option_text_en: str = Form(...),
+    option_value: str = Form(""),
     sentiment: str = Form("neutral"),
     score_value: str = Form("0"),
     follow_up_label: str = Form(""),
@@ -499,11 +498,10 @@ async def update_option(
     if not option or option.question.campaign_id != campaign_id:
         raise HTTPException(status_code=404, detail="Option not found")
     option.option_text_en = option_text_en
+    if option_value and option_value.strip():
+        option.option_value = option_value.strip()
     option.sentiment = sentiment
-    try:
-        option.score_value = int(score_value) if score_value not in (None, "") else 0
-    except (ValueError, TypeError):
-        option.score_value = 0
+    option.score_value = 0
     option.follow_up_label = follow_up_label or None
     db.commit()
     return RedirectResponse(url=f"/questionnaire/{campaign_id}", status_code=302)
@@ -629,6 +627,23 @@ async def update_flow_mapping(
     else:
         flow_map = {}
     campaign.exp_flow_map = flow_map
+    # Save skip logic if provided
+    try:
+        skip_q_order_raw = form.get("skip_question_order")
+        skip_q_order = int(skip_q_order_raw) if skip_q_order_raw else None
+    except (TypeError, ValueError):
+        skip_q_order = None
+    skip_mode = form.get("skip_mode") or "allow"
+    skip_values_raw = form.get("skip_values") or ""
+    skip_values = [v.strip() for v in skip_values_raw.split(",") if v.strip()]
+    if skip_q_order:
+        campaign.skip_logic = {
+            "question_order": skip_q_order,
+            "mode": skip_mode,
+            "values": skip_values,
+        }
+    else:
+        campaign.skip_logic = None
     campaign.thank_you_title = form.get("thank_you_title") or None
     campaign.thank_you_message = form.get("thank_you_message") or None
     upload_dir = Path("app/static/uploads")

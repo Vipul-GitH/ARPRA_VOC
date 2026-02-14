@@ -7,13 +7,42 @@
             <h2 class="text-xl font-bold">Customer issues</h2>
         </div>
     </div>
+    <form method="get" class="flex flex-wrap gap-2" data-auto-submit="true">
+        <input type="text" name="q" value="{{ search }}" placeholder="Search ticket number or text" class="border rounded px-3 py-2 text-sm w-full md:w-64">
+        <input type="date" name="start_date" value="{{ start_date }}" class="border rounded px-3 py-2 text-sm">
+        <input type="date" name="end_date" value="{{ end_date }}" class="border rounded px-3 py-2 text-sm">
+        <select name="status" class="border rounded px-3 py-2 text-sm">
+            <option value="">All Status</option>
+            {% for s in ["open", "in_progress", "resolved", "closed"] %}
+                <option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+        </select>
+        <button class="btn-primary text-sm px-4 py-2 hidden">Filter</button>
+    </form>
+    <script>
+        (function() {
+            const form = document.querySelector('form[data-auto-submit="true"]');
+            if (!form) return;
+            const submit = () => form.requestSubmit();
+            form.querySelectorAll('select, input[type="date"]').forEach(el => {
+                el.addEventListener('change', submit);
+            });
+        })();
+    </script>
     <table class="w-full bg-white rounded shadow text-sm border border-gray-200">
-        <thead class="bg-gray-50"><tr><th class="text-left p-2">Number</th><th class="text-left p-2">Campaign</th><th class="p-2">Status</th><th class="p-2">Severity</th><th class="p-2">Action</th></tr></thead>
+        <thead class="bg-gray-50"><tr><th class="text-left p-2">Number</th><th class="text-left p-2">Campaign</th><th class="text-left p-2">Response</th><th class="p-2">Status</th><th class="p-2">Severity</th><th class="p-2">Action</th></tr></thead>
         <tbody>
         {% for t in tickets %}
             <tr class="border-t">
                 <td class="p-2">{{ t.ticket_number }}</td>
                 <td class="p-2">{{ t.campaign.name if t.campaign else '' }}</td>
+                <td class="p-2">
+                    {% if t.response_id %}
+                        <a href="/responses/{{ t.response_id }}" class="text-[var(--primary,#054e5d)] font-semibold">Response #{{ t.response_id }}</a>
+                    {% else %}
+                        <span class="text-xs text-gray-500">--</span>
+                    {% endif %}
+                </td>
                 <td class="p-2"><span class="px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-700">{{ t.status }}</span></td>
                 <td class="p-2"><span class="px-2 py-1 rounded-full text-xs bg-amber-50 text-amber-700">{{ t.severity }}</span></td>
                 <td class="p-2 text-right"><a href="/tickets/{{ t.id }}" class="text-[var(--primary,#054e5d)] font-semibold">Open</a></td>

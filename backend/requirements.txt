@@ -16,3 +16,4 @@ itsdangerous
 cryptography
 qrcode[pil]
 openpyxl
+reportlab

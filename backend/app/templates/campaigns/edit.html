@@ -175,7 +175,7 @@
             <div class="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
                 <div class="md:col-span-2">
                     <label class="block text-sm font-semibold">Question text</label>
-                    <input type="text" name="question_text_en" placeholder="How was your experience today?" class="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-indigo-200" data-title-case="true" required>
+                    <textarea name="question_text_en" placeholder="How was your experience today?" rows="2" class="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-indigo-200" data-title-case="true" required></textarea>
                 </div>
                 <div class="md:col-span-2 hidden" id="new-question-placeholder">
                     <label class="block text-sm font-semibold">Answer placeholder (text type)</label>
@@ -206,13 +206,14 @@
                 </div>
                 <div id="option-rows" class="space-y-2">
                     <div class="grid grid-cols-1 md:grid-cols-5 gap-2 option-row">
-                        <input type="text" name="option_text_en" placeholder="Label" class="border rounded px-2 py-1 md:col-span-2" data-title-case="true">
+                        <textarea name="option_text_en" placeholder="Label" rows="2" class="border rounded px-2 py-1 md:col-span-2" data-title-case="true"></textarea>
+                        <textarea name="option_value" placeholder="Value/Serial (auto if blank)" rows="1" class="border rounded px-2 py-1"></textarea>
                         <select name="sentiment" class="border rounded px-2 py-1">
                             <option value="positive">Positive</option>
                             <option value="neutral" selected>Neutral</option>
                             <option value="negative">Negative</option>
                         </select>
-                        <input type="number" name="score_value" value="0" class="border rounded px-2 py-1" placeholder="Score">
+                        <input type="hidden" name="score_value" value="0">
                         <div class="md:col-span-2 flex items-center gap-2 followup-container">
                             <label class="inline-flex items-center text-xs text-gray-700">
                                 <input type="checkbox" class="followup-check h-4 w-4 text-indigo-600">
@@ -223,13 +224,14 @@
                         <button type="button" class="remove-option px-2 py-1 text-xs text-rose-600 border border-rose-200 rounded">Remove</button>
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-5 gap-2 option-row">
-                        <input type="text" name="option_text_en" placeholder="Label" class="border rounded px-2 py-1 md:col-span-2" data-title-case="true">
+                        <textarea name="option_text_en" placeholder="Label" rows="2" class="border rounded px-2 py-1 md:col-span-2" data-title-case="true"></textarea>
+                        <textarea name="option_value" placeholder="Value/Serial (auto if blank)" rows="1" class="border rounded px-2 py-1"></textarea>
                         <select name="sentiment" class="border rounded px-2 py-1">
                             <option value="positive">Positive</option>
                             <option value="neutral" selected>Neutral</option>
                             <option value="negative">Negative</option>
                         </select>
-                        <input type="number" name="score_value" value="0" class="border rounded px-2 py-1" placeholder="Score">
+                        <input type="hidden" name="score_value" value="0">
                         <div class="md:col-span-2 flex items-center gap-2 followup-container">
                             <label class="inline-flex items-center text-xs text-gray-700">
                                 <input type="checkbox" class="followup-check h-4 w-4 text-indigo-600">
@@ -453,13 +455,13 @@
         </div>
         <p class="text-xs text-gray-600 mb-3">Edit inline without losing place. Expand a card, update, and your changes save instantly - no full page reload.</p>
         {% if questions %}
-        <div id="question-list" class="grid grid-cols-1 md:grid-cols-2 gap-4" style="max-height: 650px; overflow: auto; padding-right: 4px;">
+        <div id="question-list" class="grid grid-cols-1 gap-4" style="max-height: 650px; overflow: auto; padding-right: 4px;">
             {% for q in questions %}
             <div class="border border-gray-200 rounded-lg p-4 shadow-sm space-y-3 question-card" data-question-id="{{ q.id }}">
                 <div class="flex items-start justify-between gap-2">
                     <div class="min-w-0">
                         <p class="text-xs uppercase tracking-wide text-gray-500 question-order" data-master="{{ 'true' if q.master_question_id else 'false' }}">Q{{ loop.index }} {% if q.master_question_id %}- Master linked{% endif %}</p>
-                        <p class="text-sm font-semibold text-gray-900" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px;">
+                        <p class="text-sm font-semibold text-gray-900 break-words">
                             {{ q.question_text_en }}
                         </p>
                         <div class="flex flex-wrap gap-2 mt-1 text-xs">
@@ -476,7 +478,7 @@
                     <div class="flex items-start justify-between">
                         <div class="w-full pr-3">
                             <p class="text-xs uppercase tracking-wide text-gray-500 question-order" data-master="{{ 'true' if q.master_question_id else 'false' }}">Q{{ loop.index }} {% if q.master_question_id %}- Master linked{% endif %}</p>
-                            <input type="text" name="question_text_en" value="{{ q.question_text_en }}" class="w-full border rounded px-2 py-1 text-sm" data-title-case="true" required>
+                            <textarea name="question_text_en" rows="2" class="w-full border rounded px-2 py-1 text-sm" data-title-case="true" required>{{ q.question_text_en }}</textarea>
                             <div class="mt-2 hidden text-placeholder">
                                 <label class="block text-xs font-semibold text-gray-700">Answer placeholder (text type)</label>
                                 <input type="text" name="placeholder_en" value="{{ q.placeholder_en or '' }}" class="w-full border rounded px-2 py-1 text-xs" placeholder="Type your response here">
@@ -531,14 +533,15 @@
                     </div>
                     <form method="post" action="/questionnaire/{{ campaign.id }}/questions/{{ q.id }}/add_option" class="space-y-2 text-xs add-option-form">
                         <div class="grid grid-cols-1 md:grid-cols-10 gap-2 items-center">
-                            <input type="text" name="option_text_en" placeholder="Great" class="border rounded px-2 py-1 md:col-span-4" data-title-case="true" required>
+                            <textarea name="option_text_en" placeholder="Great" rows="2" class="border rounded px-2 py-1 md:col-span-3" data-title-case="true" required></textarea>
+                            <textarea name="option_value" placeholder="Value/Serial" rows="1" class="border rounded px-2 py-1 md:col-span-2"></textarea>
                             <select name="sentiment" class="border rounded px-2 py-1 md:col-span-2">
                                 <option value="positive">Positive</option>
                                 <option value="neutral">Neutral</option>
                                 <option value="negative">Negative</option>
                             </select>
-                            <input type="number" name="score_value" value="0" class="border rounded px-2 py-1 md:col-span-2" placeholder="Score">
-                            <div class="md:col-span-2 flex justify-end">
+                            <input type="hidden" name="score_value" value="0">
+                            <div class="md:col-span-3 flex justify-end">
                                 <button class="bg-indigo-600 text-white px-3 py-2 rounded shadow-sm w-full md:w-auto">Add</button>
                             </div>
                         </div>
@@ -557,13 +560,14 @@
                         <div class="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-2">
                             <form method="post" action="/questionnaire/{{ campaign.id }}/options/{{ o.id }}/update" class="space-y-2 option-update-form text-xs">
                                 <div class="grid grid-cols-1 md:grid-cols-10 gap-2 items-center">
-                                    <input type="text" name="option_text_en" value="{{ o.option_text_en }}" class="border rounded px-2 py-1 md:col-span-4" data-title-case="true" required>
+                                    <textarea name="option_text_en" rows="2" class="border rounded px-2 py-1 md:col-span-3" data-title-case="true" required>{{ o.option_text_en }}</textarea>
+                                    <textarea name="option_value" rows="1" class="border rounded px-2 py-1 md:col-span-2">{{ o.option_value }}</textarea>
                                     <select name="sentiment" class="border rounded px-2 py-1 md:col-span-2">
                                         <option value="positive" {% if o.sentiment=='positive' %}selected{% endif %}>Positive</option>
                                         <option value="neutral" {% if o.sentiment=='neutral' %}selected{% endif %}>Neutral</option>
                                         <option value="negative" {% if o.sentiment=='negative' %}selected{% endif %}>Negative</option>
                                     </select>
-                                    <input type="number" name="score_value" value="{{ o.score_value or 0 }}" class="border rounded px-2 py-1 md:col-span-2" placeholder="Score">
+                                    <input type="hidden" name="score_value" value="{{ o.score_value or 0 }}">
                                     <div class="md:col-span-2 flex justify-end">
                                         <button class="bg-emerald-600 text-white px-3 py-2 rounded shadow-sm w-full md:w-auto">Save</button>
                                     </div>
@@ -612,7 +616,10 @@
             <h3 class="text-lg font-semibold">Flow & thank-you</h3>
             <p class="text-sm text-gray-600">Keep optional flow mapping hidden unless you need it.</p>
         </div>
-        <button type="button" id="toggle-flow" class="px-3 py-1 text-xs rounded border border-gray-300 hover:border-teal-700">Show flow & thank-you</button>
+        <div class="flex gap-2">
+            <a href="/campaigns/flow_pdf/{{ campaign.id }}" class="px-3 py-1 text-xs rounded border border-gray-300 hover:border-indigo-700" target="_blank">Export flow PDF</a>
+            <button type="button" id="toggle-flow" class="px-3 py-1 text-xs rounded border border-gray-300 hover:border-teal-700">Show flow & thank-you</button>
+        </div>
     </div>
     <div id="flow-mapping" class="section-card p-5 space-y-4 hidden">
         <div class="flex items-center justify-between">
@@ -650,6 +657,37 @@
                 {% endfor %}
             </div>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-3 pt-3 border-t">
+                <div class="md:col-span-3 bg-gray-50 border border-dashed border-gray-200 rounded p-3 space-y-2">
+                    <p class="text-xs uppercase tracking-wide text-indigo-600 font-semibold">Skip logic (optional)</p>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div>
+                            <label class="block text-sm font-semibold">Question to check</label>
+                            <select name="skip_question_order" class="w-full border rounded px-3 py-2">
+                                <option value="">-- None --</option>
+                                {% for q in questions %}
+                                    <option value="{{ q.order_index }}" {% if skip_logic and skip_logic.get('question_order') == q.order_index %}selected{% endif %}>
+                                        Q{{ q.order_index }} - {{ q.question_text_en }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold">Mode</label>
+                            <select name="skip_mode" class="w-full border rounded px-3 py-2">
+                                <option value="allow" {% if skip_logic and skip_logic.get('mode','allow')=='allow' %}selected{% endif %}>Show next only when value matches</option>
+                                <option value="block" {% if skip_logic and skip_logic.get('mode')=='block' %}selected{% endif %}>Hide next when value matches</option>
+                            </select>
+                            <p class="text-xs text-gray-500 mt-1">Allow = match to show, Block = match to hide.</p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold">Values (comma separated)</label>
+                            <input type="text" name="skip_values" class="w-full border rounded px-3 py-2"
+                                   value="{% if skip_logic %}{{ skip_logic.get('values') | join(', ') }}{% endif %}"
+                                   placeholder="yes, y, 1">
+                            <p class="text-xs text-gray-500 mt-1">Use option values (not labels); case-insensitive.</p>
+                        </div>
+                    </div>
+                </div>
                 <div>
                     <label class="block text-sm font-semibold">Thank-you title</label>
                     <input type="text" name="thank_you_title" value="{{ campaign.thank_you_title or '' }}" class="w-full border rounded px-3 py-2">

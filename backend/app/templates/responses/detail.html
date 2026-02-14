@@ -11,13 +11,29 @@
     <div class="bg-white p-4 rounded shadow space-y-2 border border-gray-200">
         <p><span class="font-semibold">Campaign:</span> {{ response.campaign.name if response.campaign else '' }}</p>
         <p><span class="font-semibold">Submitted:</span> {{ response.submission_time|local_time }}</p>
-        <p><span class="font-semibold">Overall Score:</span> {{ response.overall_score if response.overall_score is not none else 'N/A' }}</p>
-        <p><span class="font-semibold">Status:</span> {{ response.status }}</p>
+        <p>
+            <span class="font-semibold">Status:</span> {{ response.status }}
+            {% if response.ticket and response.status == 'ticket_created' %}
+                <span class="ml-2 px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-700">Ticket {{ response.ticket.status }}</span>
+            {% endif %}
+        </p>
         {% set pii = response.pii_data_json or {} %}
         {% set phone = pii.get('contact') or ((pii.get('mobile_country') or '') ~ ' ' ~ (pii.get('mobile_number') or '')) %}
         <p><span class="font-semibold">Responder:</span> {{ pii.get('name','') }} {% if phone %} ({{ phone }}){% endif %}</p>
         {% if pii.get('lab_id') %}
         <p><span class="font-semibold">Lab ID:</span> {{ pii.get('lab_id') }}</p>
+        {% endif %}
+    </div>
+    <div class="bg-white p-4 rounded shadow border border-gray-200 flex flex-wrap gap-2">
+        {% if response.ticket_id %}
+            <a href="/tickets/{{ response.ticket_id }}" class="px-4 py-2 rounded text-white" style="background: var(--primary,#054e5d);">View Ticket</a>
+        {% elif response.status in ['manual_review', 'ticket_created'] %}
+            <form method="post" action="/responses/{{ response.id }}/status?action=close">
+                <button class="px-4 py-2 rounded border">Close</button>
+            </form>
+            <form method="post" action="/responses/{{ response.id }}/status?action=create_ticket">
+                <button class="px-4 py-2 rounded text-white" style="background: var(--primary,#054e5d);">Create Ticket</button>
+            </form>
         {% endif %}
     </div>
     <div class="bg-white p-4 rounded shadow border border-gray-200">
@@ -40,7 +56,7 @@
                         {% endif %}
                         {% if a.follow_up_text %}<br><span class="text-xs text-gray-600">Follow-up: {{ a.follow_up_text }}</span>{% endif %}
                     </p>
-                    <p class="text-xs text-gray-500">Sentiment: {{ a.sentiment or 'n/a' }}, Score: {{ a.score_value or 'n/a' }}</p>
+                    <p class="text-xs text-gray-500">Sentiment: {{ a.sentiment or 'n/a' }}</p>
                 </li>
             {% endfor %}
         </ul>

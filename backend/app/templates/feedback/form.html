@@ -166,8 +166,8 @@
             <span id="progressText" class="text-xs font-semibold text-gray-600">1 / {{ total_questions }}</span>
         </div>
         <form id="wizardForm" method="post" action="/feedback/{{ token }}" class="space-y-3">
-            {% for q in questions %}
-            <div class="question-step {% if not loop.first %}hidden{% endif %} space-y-3 bg-white p-4 rounded-xl" data-index="{{ loop.index0 }}" data-question-id="{{ q.id }}">
+        {% for q in questions %}
+        <div class="question-step {% if not loop.first %}hidden{% endif %} space-y-3 bg-white p-4 rounded-xl" data-index="{{ loop.index0 }}" data-question-id="{{ q.id }}" data-order="{{ q.order_index }}">
                     <div class="flex justify-between text-sm text-gray-600">
                         <span>Q{{ loop.index }} of {{ total_questions }}</span>
                         {% if q.is_required %}<span class="text-white font-semibold px-2 py-1 rounded-full" style="background: var(--brand);">Required</span>{% endif %}
@@ -220,19 +220,19 @@
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
                         <label class="block text-sm font-semibold">Name *</label>
-                        <input type="text" name="resp_name" class="w-full border rounded px-3 py-2" required value="{{ prefill.name or '' }}">
+                        <input type="text" name="resp_name" class="w-full border rounded px-3 py-2" required value="{% if campaign.code and campaign.code|lower == 'code_5' %}{% else %}{{ prefill.name or '' }}{% endif %}">
                     </div>
                     <div class="md:col-span-2">
                         <label class="block text-sm font-semibold">Mobile *</label>
                         <div class="flex gap-2">
                             <input type="text" name="resp_mobile_country" list="country-codes" value="{{ prefill.mobile_country or '+91' }}" class="w-24 border rounded px-3 py-2" placeholder="+91">
-                            <input type="text" name="resp_mobile_number" class="flex-1 border rounded px-3 py-2" required placeholder="9876543210" value="{{ prefill.mobile_number or '' }}">
+                            <input type="text" name="resp_mobile_number" class="flex-1 border rounded px-3 py-2" required placeholder="9876543210" value="{% if campaign.code and campaign.code|lower == 'code_5' %}{% else %}{{ prefill.mobile_number or '' }}{% endif %}">
                         </div>
                         <p class="text-xs text-gray-500 mt-1">Pick a code or type one. If India, enter 10 digits.</p>
                     </div>
                     <div>
                         <label class="block text-sm font-semibold">Lab ID (optional)</label>
-                        <input type="text" name="resp_lab_id" class="w-full border rounded px-3 py-2" value="{{ prefill.lab_id or '' }}">
+                        <input type="text" name="resp_lab_id" class="w-full border rounded px-3 py-2" value="{% if campaign.code and campaign.code|lower == 'code_5' %}{% else %}{{ prefill.lab_id or '' }}{% endif %}">
                     </div>
                     <div>
                         <label class="block text-sm font-semibold">Date of visit/test (optional)</label>
@@ -254,6 +254,11 @@
             const flowMap = JSON.parse(document.getElementById('flowMappingData')?.textContent || '{}');
             const flowSourceQuestionId = Number(document.getElementById('flowSourceQuestionId')?.textContent || 0);
             const flowEnabled = flowSourceQuestionId && Object.keys(flowMap).length > 0;
+            // Skip logic data
+            const skipQuestionId = Number("{{ skip_question_id or 0 }}") || 0;
+            const skipQuestionOrder = Number("{{ skip_question_order or 0 }}") || 0;
+            const skipMode = "{{ skip_mode or 'allow' }}";
+            const skipValues = [{% for v in skip_values %}"{{ v|lower }}"{% if not loop.last %}, {% endif %}{% endfor %}];
             const steps = Array.from(document.querySelectorAll('.question-step'));
             const progressBar = document.getElementById('progressBar');
             const progressText = document.getElementById('progressText');
@@ -295,6 +300,25 @@
                 return steps.filter(step => !step.classList.contains('flow-hidden'));
             }
 
+            function applySkip() {
+                if (!skipQuestionId || !skipQuestionOrder) return;
+                const selected = getSelectedValues(skipQuestionId).map(v => (v || '').toString().toLowerCase());
+                const hasMatch = selected.some(v => skipValues.includes(v));
+                let shouldSkip = false;
+                if (skipMode === 'allow') {
+                    shouldSkip = !hasMatch;
+                } else if (skipMode === 'block') {
+                    shouldSkip = hasMatch;
+                }
+                steps.forEach(step => {
+                    const order = Number(step.dataset.order || 0);
+                    if (order > skipQuestionOrder) {
+                        step.classList.toggle('flow-hidden', shouldSkip);
+                        toggleRequired(step, !shouldSkip);
+                    }
+                });
+            }
+
             function applyFlow() {
                 const visibleIds = new Set();
                 const sourceSelected = flowEnabled && flowSourceQuestionId ? getSelectedValues(flowSourceQuestionId) : [];
@@ -311,6 +335,7 @@
                     step.classList.toggle('flow-hidden', !show);
                     toggleRequired(step, show);
                 });
+                applySkip();
                 const visible = visibleSteps();
                 if (!visible.length) return;
                 if (!visible.includes(steps[current])) {
@@ -362,6 +387,14 @@
             // Only recompute flow when the source question changes
             if (flowSourceQuestionId) {
                 document.querySelectorAll(`[name="q_${flowSourceQuestionId}"]`).forEach(el => {
+                    el.addEventListener('change', applyFlow);
+                    if (el.tagName === 'TEXTAREA') el.addEventListener('keyup', applyFlow);
+                });
+            }
+
+            // Recompute skip logic when skip question changes
+            if (skipQuestionId) {
+                document.querySelectorAll(`[name="q_${skipQuestionId}"]`).forEach(el => {
                     el.addEventListener('change', applyFlow);
                     if (el.tagName === 'TEXTAREA') el.addEventListener('keyup', applyFlow);
                 });
@@ -466,19 +499,19 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                     <label class="block text-sm font-semibold">Name *</label>
-                    <input type="text" name="resp_name" class="w-full border rounded px-3 py-2" required value="{{ prefill.name or '' }}">
+                        <input type="text" name="resp_name" class="w-full border rounded px-3 py-2" required value="{% if campaign.code and campaign.code|lower == 'code_5' %}{% else %}{{ prefill.name or '' }}{% endif %}">
                 </div>
                 <div class="md:col-span-2">
                     <label class="block text-sm font-semibold">Mobile *</label>
                     <div class="flex gap-2">
-                        <input type="text" name="resp_mobile_country" list="country-codes" value="{{ prefill.mobile_country or '+91' }}" class="w-24 border rounded px-3 py-2" placeholder="+91">
-                        <input type="text" name="resp_mobile_number" class="flex-1 border rounded px-3 py-2" required placeholder="9876543210" value="{{ prefill.mobile_number or '' }}">
+                        <input type="text" name="resp_mobile_country" list="country-codes" value="{% if campaign.code and campaign.code|lower == 'code_5' %}+91{% else %}{{ prefill.mobile_country or '+91' }}{% endif %}" class="w-24 border rounded px-3 py-2" placeholder="+91">
+                            <input type="text" name="resp_mobile_number" class="flex-1 border rounded px-3 py-2" required placeholder="9876543210" value="{% if campaign.code and campaign.code|lower == 'code_5' %}{% else %}{{ prefill.mobile_number or '' }}{% endif %}">
                     </div>
                     <p class="text-xs text-gray-500 mt-1">Pick a code or type one. If India, enter 10 digits.</p>
                 </div>
                 <div>
                     <label class="block text-sm font-semibold">Lab ID (optional)</label>
-                    <input type="text" name="resp_lab_id" class="w-full border rounded px-3 py-2" value="{{ prefill.lab_id or '' }}">
+                        <input type="text" name="resp_lab_id" class="w-full border rounded px-3 py-2" value="{% if campaign.code and campaign.code|lower == 'code_5' %}{% else %}{{ prefill.lab_id or '' }}{% endif %}">
                 </div>
                 <div>
                     <label class="block text-sm font-semibold">Date of visit/test (optional)</label>
@@ -605,6 +638,9 @@
 </script>
 <script>
     document.addEventListener('DOMContentLoaded', () => {
+        const isCode5 = "{{ campaign.code|lower if campaign.code else '' }}" === "code_5";
+        if (isCode5) return; // CODE_5 links should never auto-prefill from query params
+
         const params = new URLSearchParams(window.location.search);
         const name = params.get('name');
         const mobile = params.get('mobile');
@@ -615,7 +651,7 @@
             document.querySelectorAll(selector).forEach(el => {
                 if (!el.value) el.value = value;
             });
-            };
+        };
         fill('input[name="resp_name"]', name);
         fill('input[name="resp_mobile_number"]', mobile);
         fill('input[name="resp_mobile_country"]', country ? (country.startsWith('+') ? country : '+' + country) : null);

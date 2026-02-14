@@ -56,6 +56,7 @@
                 </form>
             </div>
             <div class="flex items-center gap-2">
+                <a href="/campaigns/flow_pdf/{{ c.id }}" target="_blank" class="px-3 py-1.5 rounded-lg text-white font-semibold shadow-sm" style="background: linear-gradient(90deg, #6366f1, #4f46e5);">Export PDF</a>
                 <button type="button" class="px-3 py-1.5 rounded-lg text-white font-semibold shadow-sm qr-btn" style="background: var(--primary, #054e5d);" data-link="{{ full_public_link }}" data-name="{{ c.name }}">QR</button>
                 <a href="{{ full_public_link }}" target="_blank" class="px-3 py-1.5 rounded-lg text-white font-semibold shadow-sm hover:opacity-95" style="background: linear-gradient(90deg, #34d399, #22c55e);">Open form</a>
             </div>

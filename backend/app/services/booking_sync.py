@@ -109,7 +109,9 @@ class BookingSync:
                 dob DATE NULL,
                 slot VARCHAR(100),
                 mobile VARCHAR(50),
-                isCampaingsend TINYINT(1) NOT NULL DEFAULT 0
+                isCampaingsend TINYINT(1) NOT NULL DEFAULT 0,
+                isResponseSubmitted TINYINT(1) NOT NULL DEFAULT 0,
+                enterdate DATETIME NULL
             )
             """
         )
@@ -120,6 +122,22 @@ class BookingSync:
                     conn.execute(
                         text(
                             "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS isCampaingsend TINYINT(1) NOT NULL DEFAULT 0"
+                        )
+                    )
+                except Exception as exc:
+                    self._log(f"Column ensure skipped: {exc}")
+                try:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS isResponseSubmitted TINYINT(1) NOT NULL DEFAULT 0"
+                        )
+                    )
+                except Exception as exc:
+                    self._log(f"Column ensure skipped: {exc}")
+                try:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS enterdate DATETIME NULL"
                         )
                     )
                 except Exception as exc:
@@ -143,7 +161,7 @@ class BookingSync:
     def process_pending_bookings(self):
         query = text(
             """
-            SELECT bookingid, customername, dob, slot, mobile
+            SELECT bookingid, customername, dob, slot, mobile, enterdate
             FROM tblbooking
             WHERE startappbooking = 2
               AND DATE(enterdate) = CURDATE()
@@ -153,8 +171,8 @@ class BookingSync:
         )
         insert_stmt = text(
             """
-            INSERT IGNORE INTO bookings (bookingid, customername, dob, slot, mobile)
-            VALUES (:bookingid, :customername, :dob, :slot, :mobile)
+            INSERT IGNORE INTO bookings (bookingid, customername, dob, slot, mobile, enterdate)
+            VALUES (:bookingid, :customername, :dob, :slot, :mobile, :enterdate)
             """
         )
         try:

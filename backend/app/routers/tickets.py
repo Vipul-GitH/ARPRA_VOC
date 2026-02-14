@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta
+
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -26,10 +28,49 @@ templates.env.filters["local_time"] = local_time
 
 
 @router.get("/")
-async def list_tickets(request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
-    tickets = db.query(FeedbackTicket).order_by(FeedbackTicket.created_at.desc()).all()
+async def list_tickets(
+    request: Request,
+    q: str | None = None,
+    status: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    tickets = db.query(FeedbackTicket)
+    if status:
+        tickets = tickets.filter(FeedbackTicket.status == status)
+    if q:
+        like = f"%{q.strip()}%"
+        tickets = tickets.filter(
+            (FeedbackTicket.ticket_number.like(like))
+            | (FeedbackTicket.summary.like(like))
+            | (FeedbackTicket.details.like(like))
+        )
+    if start_date:
+        try:
+            start_dt = datetime.fromisoformat(start_date)
+            tickets = tickets.filter(FeedbackTicket.created_at >= start_dt)
+        except ValueError:
+            pass
+    if end_date:
+        try:
+            end_dt = datetime.fromisoformat(end_date) + timedelta(days=1)
+            tickets = tickets.filter(FeedbackTicket.created_at < end_dt)
+        except ValueError:
+            pass
+    tickets = tickets.order_by(FeedbackTicket.created_at.desc()).all()
     return templates.TemplateResponse(
-        "tickets/list.html", {"request": request, "tickets": tickets, "user": user}
+        "tickets/list.html",
+        {
+            "request": request,
+            "tickets": tickets,
+            "user": user,
+            "search": q or "",
+            "status": status or "",
+            "start_date": start_date or "",
+            "end_date": end_date or "",
+        },
     )
 
 
@@ -56,6 +97,8 @@ async def add_update(
     ticket = db.query(FeedbackTicket).get(ticket_id)
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
+    if ticket.status == "closed":
+        return RedirectResponse(url=f"/tickets/{ticket_id}", status_code=302)
     ticket.status = status
     if closure_mood:
         ticket.closure_mood = closure_mood

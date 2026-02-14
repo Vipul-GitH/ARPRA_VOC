@@ -34,13 +34,15 @@ class BookingCampaignSender:
         digits = "".join(ch for ch in str(raw) if ch.isdigit())
         if not digits:
             return ""
+        if len(digits) < 10:
+            return ""
         if digits.startswith("91") and len(digits) == 12:
             return digits
         if len(digits) == 10:
             return "91" + digits
         if digits.startswith("0") and len(digits) == 11:
             return "91" + digits[1:]
-        return digits
+        return ""
 
     def start(self):
         self.scheduler.add_job(self.process_pending, "interval", hours=1, max_instances=1, coalesce=True)

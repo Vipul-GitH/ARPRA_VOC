@@ -4,7 +4,7 @@ from typing import List
 import io
 import csv
 import re
-from io import BytesIO
+from io import BytesIO, StringIO
 from pathlib import Path
 from uuid import uuid4
 
@@ -41,6 +41,21 @@ from app.models import (
 from app.routers.auth import get_current_user, require_role
 from app.routers.questionnaire import ensure_campaign_has_exp_lab_question, ensure_exp_lab_master_question
 
+# Optional PDF export dependency
+try:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.pdfgen import canvas
+    from reportlab.lib import colors
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+except ImportError:  # pragma: no cover - fallback if reportlab not installed
+    A4 = None
+    mm = None
+    canvas = None
+    pdfmetrics = None
+    TTFont = None
+
 router = APIRouter(tags=["campaigns"])
 templates = Jinja2Templates(directory="app/templates")
 PUBLIC_HOST = "https://labmate.bhasinpathlabs.com:4667"
@@ -54,6 +69,206 @@ async def list_campaigns(request: Request, db: Session = Depends(get_db), user=D
     campaigns = db.query(Campaign).all()
     return templates.TemplateResponse(
         "campaigns/list.html", {"request": request, "campaigns": campaigns, "user": user}
+    )
+
+
+@router.get("/flow_pdf/{campaign_id}")
+async def export_campaign_flow_pdf(
+    campaign_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    if canvas is None:
+        raise HTTPException(
+            status_code=501,
+            detail="PDF export requires reportlab in the app environment.",
+        )
+    campaign = db.query(Campaign).get(campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    questions = (
+        db.query(CampaignQuestion)
+        .filter(CampaignQuestion.campaign_id == campaign.id)
+        .order_by(CampaignQuestion.order_index, CampaignQuestion.id)
+        .all()
+    )
+    buffer = BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+    y = height - 20 * mm
+
+    # Force ASCII to drop Hindi characters (per request); use Helvetica
+    force_ascii = True
+    font_name = "Helvetica"
+
+    max_width = width - 40 * mm
+
+    def wrap_text(text: str, size: int) -> list[str]:
+        """ASCII-only, clean punctuation, wrap to page width."""
+        if not text:
+            return [""]
+        replacements = {
+            "–": "-",
+            "—": "-",
+            "−": "-",
+            "•": "-",
+            ",": " ",
+            "/": " ",
+            "?": " ",
+            "(": " ",
+            ")": " ",
+            ".": " ",
+        }
+        for k, v in replacements.items():
+            text = text.replace(k, v)
+        # keep only A-Z a-z 0-9 dash and space
+        cleaned = []
+        for ch in text:
+            if ch.isascii() and (ch.isalnum() or ch in {"-", " "}):
+                cleaned.append(ch)
+            else:
+                cleaned.append(" ")
+        text = "".join(cleaned)
+        words = text.split()
+        if not words:
+            return [""]
+        max_chars = int(max_width / (size * 0.55))
+        lines = []
+        line = []
+        count = 0
+        for w in words:
+            if count + len(w) + (1 if line else 0) > max_chars:
+                lines.append(" ".join(line))
+                line = [w]
+                count = len(w)
+            else:
+                line.append(w)
+                count += len(w) + (1 if line[:-1] else 0)
+        if line:
+            lines.append(" ".join(line))
+        return lines or [""]
+
+    def add_line(text: str, font=font_name, size=11, leading=14, color=colors.black):
+        nonlocal y
+        if y < 20 * mm:
+            pdf.showPage()
+            y = height - 20 * mm
+        pdf.setFont(font, size)
+        for ln in wrap_text(text, size):
+            if y < 20 * mm:
+                pdf.showPage()
+                y = height - 20 * mm
+                pdf.setFont(font, size)
+            pdf.setFillColor(color)
+            pdf.drawString(20 * mm, y, ln)
+            pdf.setFillColor(colors.black)
+            y -= leading
+
+    sentiment_colors = {
+        "positive": colors.HexColor("#22c55e"),
+        "neutral": colors.HexColor("#facc15"),
+        "negative": colors.HexColor("#ef4444"),
+    }
+    add_line(f"Campaign: {campaign.name}", size=14, leading=18)
+    add_line(f"Code: {campaign.code or ''}", size=12, leading=16)
+    add_line(f"Total Questions: {len(questions)}", size=10, leading=14)
+    # Legend directly under heading
+    legend_items = [("positive", "Positive"), ("neutral", "Neutral"), ("negative", "Negative")]
+    if y < 25 * mm:
+        pdf.showPage()
+        y = height - 20 * mm
+    pdf.setFont(font_name, 9)
+    for idx, (key, label) in enumerate(legend_items):
+        r = 3.5
+        x = 20 * mm + idx * 45
+        pdf.setFillColor(sentiment_colors[key])
+        pdf.circle(x, y, r, fill=1, stroke=0)
+        pdf.setFillColor(colors.black)
+        pdf.drawString(x + 7, y + r - 1, label)
+    y -= 14
+    add_line("")
+
+    # Section: Questions
+    add_line("Questions", size=13, leading=17)
+    add_line("----------------------------------------", size=9, leading=12)
+    for q in questions:
+        q_title = q.question_text_en or q.question_text or ""
+        add_line(f"Q{q.order_index or q.id}: {q_title}", size=11, leading=15)
+        if q.options:
+            for opt in sorted(q.options, key=lambda o: (o.order_index or 0, o.id)):
+                opt_text = opt.option_text_en or opt.option_text_hi or str(opt.option_value)
+                sentiment = (opt.sentiment or "").lower()
+                # draw badge + text manually (sentiment optional)
+                sentiment = (opt.sentiment or "").lower()
+                color = sentiment_colors.get(sentiment, colors.lightgrey)
+                text_font_size = 10
+                leading = 13
+                opt_lines = wrap_text(opt_text, text_font_size)
+                if y < 20 * mm:
+                    pdf.showPage()
+                    y = height - 20 * mm
+                for idx, ln in enumerate(opt_lines):
+                    pdf.setFillColor(color)
+                    pdf.circle(22 * mm, y + 2, 3, fill=1, stroke=0)
+                    pdf.setFillColor(colors.black)
+                    pdf.setFont(font_name, text_font_size)
+                    pdf.drawString(28 * mm, y, ln)
+                    y -= leading
+        add_line("")
+
+    # Flow mapping (exp_flow_map uses Q1 options -> follow-up question IDs)
+    flow_map = campaign.exp_flow_map or {}
+    first_question = questions[0] if questions else None
+    if flow_map and first_question and first_question.options:
+        q_lookup = {q.id: q for q in questions}
+        opt_lookup = {}
+        for opt in first_question.options:
+            if opt.option_value is not None:
+                opt_lookup[opt.option_value] = opt
+                opt_lookup[str(opt.option_value)] = opt
+            if opt.option_text_en:
+                opt_lookup[opt.option_text_en] = opt
+            if opt.option_text_hi:
+                opt_lookup[opt.option_text_hi] = opt
+
+        add_line("Flow mapping (driven by Q1)", size=12, leading=16)
+        add_line("----------------------------------------", size=9, leading=12)
+        add_line(f"Q1: {first_question.question_text_en or first_question.question_text or ''}", size=10, leading=14)
+        for key, targets in flow_map.items():
+            opt = opt_lookup.get(key)
+            label = opt.option_text_en or opt.option_text_hi or str(opt.option_value) if opt else str(key)
+            target_lines = []
+            for qid in targets or []:
+                q_obj = q_lookup.get(qid)
+                if q_obj:
+                    target_lines.append(f"Q{q_obj.order_index or q_obj.id}: {q_obj.question_text_en or q_obj.question_text or ''}")
+            add_line(f"If Q1 = {label} ->", size=11, leading=15)
+            if target_lines:
+                for tl in target_lines:
+                    add_line(f"    • {tl}", size=9, leading=12)
+            else:
+                add_line("    (no follow-up mapped)", size=9, leading=12)
+        add_line("")
+
+    # Skip logic summary (if present)
+    if campaign.skip_logic:
+        sl = campaign.skip_logic
+        add_line("Skip logic", size=12, leading=16)
+        add_line("----------------------------------------", size=9, leading=12)
+        add_line(f"Check question order: {sl.get('question_order')}", size=10, leading=13)
+        add_line(f"Mode: {sl.get('mode', 'allow')} (allow=show only when value matches; block=hide when matches)", size=9, leading=12)
+        add_line(f"Match values: {', '.join([str(v) for v in sl.get('values', [])])}", size=9, leading=12)
+        add_line("")
+
+    pdf.showPage()
+    pdf.save()
+    buffer.seek(0)
+    filename = f"campaign_{campaign_id}_flow.pdf"
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename=\"{filename}\"'},
     )
 
 
@@ -224,18 +439,39 @@ async def upload_recipients(
 
         success_count = 0
         failed = []
+        details: List[dict] = []
         for entry in contacts:
             target = _normalize_contact(entry["contact"])
             if not target:
                 failed.append({"target": entry["contact"], "error": "invalid contact"})
+                details.append({"target": entry["contact"], "name": entry["name"], "status": "failed", "error": "invalid contact"})
                 continue
             mobile_param = quote(target[-10:]) if len(target) >= 10 else quote(target)
             name_param = quote(entry["name"])
             link = f"{base_link}?name={name_param}&mobile={mobile_param}&country=91"
+            # Custom message for campaign code_5
+            if (campaign.code or "").lower() == "code_5":
+                nm = entry["name"]
+                msg = (
+                    f"Hello {nm},\n"
+                    "At Dr Bhasin’s Lab, accuracy and patient safety depend on people, not machines alone.\n"
+                    "This feedback is not for fault-finding. It is to understand your experience, improve systems, and support you better.\n"
+                    "Your honest responses will help us work better together and serve patients better.\n"
+                    "Share Your Experience here:nctrckg.com/bjgKlo9\n\n"
+                    f"प्रिय {nm} ,\n"
+                    "डॉ. भसीन लैब में सटीकता और मरीजों की सुरक्षा केवल मशीनों से नहीं, बल्कि लोगों से सुनिश्चित होती है।\n"
+                    "यह फीडबैक किसी की गलती निकालने के लिए नहीं है। इसका उद्देश्य आपके अनुभव को समझना, कार्यप्रणाली सुधारना और आपको बेहतर सहयोग देना है।\n"
+                    "आपकी ईमानदार राय हमें बेहतर काम करने और मरीजों को बेहतर सेवा देने में मदद करेगी।\n"
+                    "अपना अनुभव यहां साझा करें:nctrckg.com/bAHnO7E\n\n"
+                    "With Care,\nDr Vishu Bhasin & Dr Vipul Bhasin\nDr Bhasin's Lab"
+                )
+            else:
+                msg = f"Hi {entry['name']}, please share your feedback: {link}"
+
             payload = {
                 "accountId": WHATSAPP_ACCOUNT_ID,
                 "target": target,
-                "message": f"Hi {entry['name']}, please share your feedback: {link}",
+                "message": msg,
             }
             if media_url:
                 payload["mediaUrl"] = media_url
@@ -245,10 +481,13 @@ async def upload_recipients(
                 resp = requests.post(WHATSAPP_SEND_API, json=payload, timeout=8)
                 if 200 <= resp.status_code < 300:
                     success_count += 1
+                    details.append({"target": entry["contact"], "name": entry["name"], "status": "success"})
                 else:
                     failed.append({"target": entry["contact"], "error": f"HTTP {resp.status_code}"})
+                    details.append({"target": entry["contact"], "name": entry["name"], "status": "failed", "error": f"HTTP {resp.status_code}", "body": resp.text[:200] if resp.text else ""})
             except Exception as exc:
                 failed.append({"target": entry["contact"], "error": str(exc)})
+                details.append({"target": entry["contact"], "name": entry["name"], "status": "failed", "error": str(exc)})
 
         summary = {
             "count": len(contacts),
@@ -257,6 +496,28 @@ async def upload_recipients(
             "send_success": success_count,
             "send_failed": failed,
         }
+        # Log send summary to file
+        try:
+            logs_dir = Path("logs")
+            logs_dir.mkdir(parents=True, exist_ok=True)
+            log_path = logs_dir / "campaign_send.log"
+            ts = datetime.utcnow().isoformat()
+            with log_path.open("a", encoding="utf-8") as fh:
+                fh.write(
+                    f"{ts} | campaign={campaign.code or campaign.id} | name={campaign.name} | total={len(contacts)} | "
+                    f"success={success_count} | failed={len(failed)} | list={list_name}\n"
+                )
+                for item in details:
+                    status = item.get("status")
+                    tgt = item.get("target")
+                    nm = item.get("name")
+                    err = item.get("error", "")
+                    fh.write(f"  - status={status} target={tgt} name={nm}")
+                    if err:
+                        fh.write(f" error={err}")
+                    fh.write("\n")
+        except Exception as e:
+            print(f"[CampaignSend] log write failed: {e}")
         return templates.TemplateResponse(
             "campaigns/send.html",
             {"request": request, "user": user, "campaigns": campaigns, "summary": summary, "error": None},

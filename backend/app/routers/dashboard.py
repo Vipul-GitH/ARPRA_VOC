@@ -78,12 +78,6 @@ async def dashboard(
         .scalar()
         or 0
     )
-    window_avg_rating = (
-        db.query(func.avg(FeedbackResponse.overall_score))
-        .filter(FeedbackResponse.submission_time.between(window_start, window_end))
-        .scalar()
-    )
-    window_avg_rating = round(window_avg_rating, 2) if window_avg_rating else None
     complaint_rate = round((window_complaints / window_feedback) * 100, 1) if window_feedback else 0
 
     prior_feedback = (
@@ -96,9 +90,12 @@ async def dashboard(
 
     # Lifetime basics
     total_feedback = db.query(func.count(FeedbackResponse.id)).scalar() or 0
-    avg_rating = db.query(func.avg(FeedbackResponse.overall_score)).scalar()
-    avg_rating = round(avg_rating, 2) if avg_rating else None
-    open_tickets = db.query(FeedbackTicket).filter(FeedbackTicket.status != "closed").count()
+    open_statuses = ["open", "in_progress"]
+    open_tickets = (
+        db.query(FeedbackTicket)
+        .filter(FeedbackTicket.status.in_(open_statuses))
+        .count()
+    )
 
     # Ticket breakdowns
     tickets_by_status_rows = (
@@ -115,7 +112,11 @@ async def dashboard(
     )
     tickets_by_severity = {row[0] or "unknown": row[1] for row in tickets_by_severity_rows} if tickets_by_severity_rows else {}
 
-    open_ticket_dates = db.query(FeedbackTicket.created_at).filter(FeedbackTicket.status != "closed").all()
+    open_ticket_dates = (
+        db.query(FeedbackTicket.created_at)
+        .filter(FeedbackTicket.status.in_(open_statuses))
+        .all()
+    )
     now = datetime.utcnow()
     open_ticket_age_days = [
         max((now - row[0]).days, 0)
@@ -129,7 +130,6 @@ async def dashboard(
         db.query(
             FeedbackResponse.campaign_id.label("cid"),
             func.count(FeedbackResponse.id).label("responses"),
-            func.avg(FeedbackResponse.overall_score).label("avg_score"),
             func.sum(
                 case(
                     (FeedbackResponse.is_complaint.is_(True), 1),
@@ -153,7 +153,6 @@ async def dashboard(
             Campaign.name,
             func.coalesce(response_stats.c.responses, 0),
             func.coalesce(recipient_stats.c.recipients, 0),
-            func.coalesce(response_stats.c.avg_score, 0),
             func.coalesce(response_stats.c.complaints, 0),
         )
         .outerjoin(response_stats, response_stats.c.cid == Campaign.id)
@@ -231,7 +230,6 @@ async def dashboard(
     recent_responses = (
         db.query(
             FeedbackResponse.submission_time,
-            FeedbackResponse.overall_score,
             FeedbackResponse.overall_sentiment,
             Campaign.name,
         )
@@ -260,10 +258,8 @@ async def dashboard(
                 "window_feedback": window_feedback,
                 "feedback_delta": feedback_delta,
                 "window_complaints": window_complaints,
-                "window_avg_rating": window_avg_rating,
                 "complaint_rate": complaint_rate,
                 "total_feedback": total_feedback,
-                "avg_rating": avg_rating,
                 "open_tickets": open_tickets,
                 "avg_ticket_age_days": avg_ticket_age_days,
                 "tickets_by_status": tickets_by_status,

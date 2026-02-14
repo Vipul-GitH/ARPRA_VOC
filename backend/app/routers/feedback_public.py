@@ -12,6 +12,12 @@ from app.config import get_settings
 from app.database import get_db
 from app.models import Campaign, CampaignQuestion, CampaignRecipient, FeedbackAnswer, FeedbackResponse, QuestionFlowRule
 from app.services.feedback import compute_scores, create_ticket_if_needed
+
+# Default per-campaign skip-flow rules (fallback if skip_logic not set on campaign)
+# Format: code -> {"question_order": int, "mode": "allow"|"block", "values": [option_value strings]}
+SKIP_FLOW_RULES = {
+    "CODE_5": {"question_order": 16, "mode": "allow", "values": ["yes", "y", "1", "haan", "haan ji"]},
+}
 router = APIRouter(tags=["feedback_public"], include_in_schema=False)
 templates = Jinja2Templates(directory="app/templates")
 
@@ -98,7 +104,32 @@ async def view_form(token: str, request: Request, db: Session = Depends(get_db))
     first_question = questions[0] if questions else None
     total_questions = len(questions)
     flow_rules_data = []
-    prefill = _prefill_from_booking(request)
+    if campaign.code and campaign.code.lower() == "code_5":
+        prefill = {"name": "", "mobile_country": "+91", "mobile_number": "", "lab_id": ""}
+    else:
+        prefill = _prefill_from_booking(request)
+    # Special case: Campaign CODE_5 needs Q16 branching to thank-you.
+    skip_q_id = None
+    skip_q_order = None
+    skip_values: list[str] = []
+    skip_mode = "allow"
+    rule = campaign.skip_logic or SKIP_FLOW_RULES.get(campaign.code)
+    if rule:
+        target_order = rule.get("question_order")
+        skip_mode = rule.get("mode", "allow")
+        values_set = {str(v).lower() for v in rule.get("values", [])}
+        if target_order:
+            for q in questions:
+                if q.order_index == target_order:
+                    skip_q_id = q.id
+                    skip_q_order = q.order_index
+                    if q.options and values_set:
+                        for opt in q.options:
+                            text = (opt.option_text_en or "").lower()
+                            val = (opt.option_value or "").lower()
+                            if val in values_set or text in values_set:
+                                skip_values.append(opt.option_value)
+                    break
     db.commit()
     return templates.TemplateResponse(
         "feedback/form.html",
@@ -114,6 +145,10 @@ async def view_form(token: str, request: Request, db: Session = Depends(get_db))
             "flow_mapping_json": json.dumps(campaign.exp_flow_map or {}),
             "flow_source_question_id": first_question.id if first_question else None,
             "prefill": prefill,
+            "skip_question_id": skip_q_id,
+            "skip_question_order": skip_q_order,
+            "skip_values": skip_values,
+            "skip_mode": skip_mode,
         },
     )
 
@@ -133,7 +168,31 @@ async def submit_form(token: str, request: Request, db: Session = Depends(get_db
     first_question = questions[0] if questions else None
     total_questions = len(questions)
     flow_rules_data = []
-    prefill = _prefill_from_booking(request)
+    if campaign.code and campaign.code.lower() == "code_5":
+        prefill = {"name": "", "mobile_country": "+91", "mobile_number": "", "lab_id": ""}
+    else:
+        prefill = _prefill_from_booking(request)
+    skip_q_id = None
+    skip_q_order = None
+    skip_values: list[str] = []
+    skip_mode = "allow"
+    rule = campaign.skip_logic or SKIP_FLOW_RULES.get(campaign.code)
+    if rule:
+        target_order = rule.get("question_order")
+        skip_mode = rule.get("mode", "allow")
+        values_set = {str(v).lower() for v in rule.get("values", [])}
+        if target_order:
+            for q in questions:
+                if q.order_index == target_order:
+                    skip_q_id = q.id
+                    skip_q_order = q.order_index
+                    if q.options and values_set:
+                        for opt in q.options:
+                            text = (opt.option_text_en or "").lower()
+                            val = (opt.option_value or "").lower()
+                            if val in values_set or text in values_set:
+                                skip_values.append(opt.option_value)
+                    break
     # Collect respondent info
     name = form.get("resp_name", "").strip()
     mobile_country = form.get("resp_mobile_country", "").strip() or "+91"
@@ -156,6 +215,10 @@ async def submit_form(token: str, request: Request, db: Session = Depends(get_db
             "flow_source_question_id": first_question.id if first_question else None,
             "error": msg,
             "prefill": prefill,
+            "skip_question_id": skip_q_id,
+            "skip_question_order": skip_q_order,
+            "skip_values": skip_values,
+            "skip_mode": skip_mode,
         },
             status_code=status,
         )
@@ -206,7 +269,7 @@ async def submit_form(token: str, request: Request, db: Session = Depends(get_db
             )
             if option:
                 sentiment = option.sentiment
-                score = option.score_value
+                score = None
         # capture follow-up text if any selected option has follow-up
         if question.options:
             for opt in question.options:
