@@ -4,10 +4,17 @@
     <div class="flex items-center justify-between">
         <div>
             <p class="text-xs uppercase tracking-wide text-[var(--primary,#054e5d)] font-semibold">Tickets</p>
-            <h2 class="text-xl font-bold">Customer issues</h2>
+            <h2 class="text-xl font-bold">{{ 'Staff Tickets' if active_scope == 'special' else 'Patient Tickets' }}</h2>
         </div>
     </div>
-    <form method="get" class="flex flex-wrap gap-2" data-auto-submit="true">
+    <div class="w-full flex flex-wrap gap-2">
+        <a href="/tickets/?scope=regular" class="inline-flex items-center justify-center px-4 py-2 rounded text-sm font-semibold {{ 'shadow-sm' if active_scope == 'regular' else '' }}"
+           style="min-width:140px; background:{{ '#0a5c65' if active_scope == 'regular' else '#f8fafc' }}; color:{{ '#ffffff' if active_scope == 'regular' else '#0a5c65' }}; border:1px solid {{ '#0a5c65' if active_scope == 'regular' else '#d1d5db' }};">Patient Tickets</a>
+        <a href="/tickets/?scope=special" class="inline-flex items-center justify-center px-4 py-2 rounded text-sm font-semibold {{ 'shadow-sm' if active_scope == 'special' else '' }}"
+           style="min-width:140px; background:{{ '#0a5c65' if active_scope == 'special' else '#f8fafc' }}; color:{{ '#ffffff' if active_scope == 'special' else '#0a5c65' }}; border:1px solid {{ '#0a5c65' if active_scope == 'special' else '#d1d5db' }};">Staff Tickets</a>
+    </div>
+    <form method="get" class="flex flex-wrap gap-2">
+        <input type="hidden" name="scope" value="{{ active_scope }}">
         <input type="text" name="q" value="{{ search }}" placeholder="Search ticket number or text" class="border rounded px-3 py-2 text-sm w-full md:w-64">
         <input type="date" name="start_date" value="{{ start_date }}" class="border rounded px-3 py-2 text-sm">
         <input type="date" name="end_date" value="{{ end_date }}" class="border rounded px-3 py-2 text-sm">
@@ -17,20 +24,11 @@
                 <option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ s }}</option>
             {% endfor %}
         </select>
-        <button class="btn-primary text-sm px-4 py-2 hidden">Filter</button>
+        <button type="submit" class="btn-primary text-sm px-4 py-2">Filter</button>
+        <a href="/tickets/?scope={{ active_scope }}" class="px-4 py-2 text-sm rounded border border-gray-300 bg-white text-gray-800">Clear filter</a>
     </form>
-    <script>
-        (function() {
-            const form = document.querySelector('form[data-auto-submit="true"]');
-            if (!form) return;
-            const submit = () => form.requestSubmit();
-            form.querySelectorAll('select, input[type="date"]').forEach(el => {
-                el.addEventListener('change', submit);
-            });
-        })();
-    </script>
     <table class="w-full bg-white rounded shadow text-sm border border-gray-200">
-        <thead class="bg-gray-50"><tr><th class="text-left p-2">Number</th><th class="text-left p-2">Campaign</th><th class="text-left p-2">Response</th><th class="p-2">Status</th><th class="p-2">Severity</th><th class="p-2">Action</th></tr></thead>
+        <thead class="bg-gray-50"><tr><th class="text-left p-2">Number</th><th class="text-left p-2">Campaign</th><th class="text-left p-2">Response</th><th class="p-2">Status</th><th class="p-2">Severity</th><th class="text-left p-2">Closure Mood</th><th class="p-2">Action</th></tr></thead>
         <tbody>
         {% for t in tickets %}
             <tr class="border-t">
@@ -45,6 +43,13 @@
                 </td>
                 <td class="p-2"><span class="px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-700">{{ t.status }}</span></td>
                 <td class="p-2"><span class="px-2 py-1 rounded-full text-xs bg-amber-50 text-amber-700">{{ t.severity }}</span></td>
+                <td class="p-2">
+                    {% if t.status == 'closed' and t.closure_mood %}
+                        <span class="px-2 py-1 rounded-full text-xs bg-emerald-50 text-emerald-700">{{ t.closure_mood }}</span>
+                    {% else %}
+                        <span class="text-xs text-gray-400">--</span>
+                    {% endif %}
+                </td>
                 <td class="p-2 text-right"><a href="/tickets/{{ t.id }}" class="text-[var(--primary,#054e5d)] font-semibold">Open</a></td>
             </tr>
         {% endfor %}

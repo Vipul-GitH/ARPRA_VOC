@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     )
     whatsapp_template_name: str = Field("patient_feedback", env="WHATSAPP_TEMPLATE_NAME")
     whatsapp_campaign_link: str = Field(
-        "https://labmate.bhasinpathlabs.com:4667/feedback/CODE_2",
+        "https://labmate.bhasinpathlabs.com:4668/feedback/CODE_2",
         env="WHATSAPP_CAMPAIGN_LINK",
     )
     mysql_host: str = Field("", env="MYSQL_HOST")

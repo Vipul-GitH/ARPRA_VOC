@@ -4,15 +4,22 @@
     <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
             <p class="text-xs uppercase tracking-wide text-[var(--primary,#054e5d)] font-semibold">Responses</p>
-            <h2 class="text-xl font-bold">Recent feedback</h2>
+            <h2 class="text-xl font-bold">
+                {{ 'Staff Response' if active_scope == 'special' else 'Patient Response' }}
+            </h2>
         </div>
         <div class="flex gap-2">
-            <a href="/responses/" class="inline-flex items-center justify-center px-4 py-2 rounded shadow-sm text-sm font-semibold"
-               style="min-width:110px; background:#0a5c65; color:#ffffff; border:1px solid #0a5c65;">Responses</a>
             <a href="/responses/bookings" class="inline-flex items-center justify-center px-4 py-2 rounded text-sm font-semibold"
                style="min-width:110px; background:#f8fafc; color:#0a5c65; border:1px solid #d1d5db;">Bookings</a>
         </div>
-        <form method="get" class="flex flex-wrap gap-2" data-auto-submit="true">
+        <div class="w-full flex flex-wrap gap-2">
+            <a href="/responses/?scope=regular" class="inline-flex items-center justify-center px-4 py-2 rounded text-sm font-semibold {{ 'shadow-sm' if active_scope == 'regular' else '' }}"
+               style="min-width:160px; background:{{ '#0a5c65' if active_scope == 'regular' else '#f8fafc' }}; color:{{ '#ffffff' if active_scope == 'regular' else '#0a5c65' }}; border:1px solid {{ '#0a5c65' if active_scope == 'regular' else '#d1d5db' }};">Patient Response</a>
+            <a href="/responses/?scope=special" class="inline-flex items-center justify-center px-4 py-2 rounded text-sm font-semibold {{ 'shadow-sm' if active_scope == 'special' else '' }}"
+               style="min-width:160px; background:{{ '#0a5c65' if active_scope == 'special' else '#f8fafc' }}; color:{{ '#ffffff' if active_scope == 'special' else '#0a5c65' }}; border:1px solid {{ '#0a5c65' if active_scope == 'special' else '#d1d5db' }};">Staff Response</a>
+        </div>
+        <form method="get" class="flex flex-wrap gap-2">
+            <input type="hidden" name="scope" value="{{ active_scope }}">
             <input type="text" name="q" value="{{ search }}" placeholder="Search ID / name / mobile / lab id" class="border rounded px-3 py-2 text-sm w-full md:w-64">
             <input type="date" name="start_date" value="{{ start_date }}" class="border rounded px-3 py-2 text-sm">
             <input type="date" name="end_date" value="{{ end_date }}" class="border rounded px-3 py-2 text-sm">
@@ -28,22 +35,13 @@
                     <option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ s }}</option>
                 {% endfor %}
             </select>
-            <button class="btn-primary text-sm px-4 py-2 hidden">Filter</button>
+            <button type="submit" class="btn-primary text-sm px-4 py-2">Filter</button>
+            <a href="/responses/?scope={{ active_scope }}" class="px-4 py-2 text-sm rounded border border-gray-300 bg-white text-gray-800">Clear filter</a>
         </form>
         <div class="flex gap-2">
             <a class="btn-primary px-4 py-2 text-sm" href="/responses/export.csv?{{ request.query_params.multi_items()|urlencode }}">Export filtered</a>
             <button id="export-selected" class="px-4 py-2 text-sm rounded border border-gray-300 bg-white text-gray-800">Export selected</button>
         </div>
-        <script>
-            (function() {
-                const form = document.querySelector('form[data-auto-submit="true"]');
-                if (!form) return;
-                const submit = () => form.requestSubmit();
-                form.querySelectorAll('select, input[type="date"]').forEach(el => {
-                    el.addEventListener('change', submit);
-                });
-            })();
-        </script>
     </div>
     <table class="w-full bg-white rounded shadow text-sm border border-gray-200">
         <thead class="bg-gray-50">

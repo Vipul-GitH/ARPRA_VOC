@@ -11,6 +11,9 @@
     <div class="bg-white p-4 rounded shadow space-y-2 border border-gray-200">
         <p><span class="font-semibold">Status:</span> {{ ticket.status }}</p>
         <p><span class="font-semibold">Severity:</span> {{ ticket.severity }}</p>
+        {% if ticket.status == 'closed' and ticket.closure_mood %}
+            <p><span class="font-semibold">Closure Mood:</span> {{ ticket.closure_mood }}</p>
+        {% endif %}
         <p><span class="font-semibold">Response:</span>
             {% if ticket.response_id %}
                 <a href="/responses/{{ ticket.response_id }}" class="text-[var(--primary,#054e5d)] font-semibold">Response #{{ ticket.response_id }}</a>

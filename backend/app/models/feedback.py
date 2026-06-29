@@ -21,6 +21,7 @@ class FeedbackResponse(Base):
     is_complaint = Column(Boolean, default=False)
     ticket_id = Column(Integer, ForeignKey("feedback_tickets.id"))
     status = Column(String(50), default="auto_processed")
+    has_updates = Column(Boolean, default=False)
     pii_data_json = Column(JSON)
 
     campaign = relationship("Campaign", back_populates="responses")

@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import text
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -21,6 +21,7 @@ from datetime import datetime
 router = APIRouter(tags=["responses"])
 templates = Jinja2Templates(directory="app/templates")
 local_tz = pytz.timezone("Asia/Kolkata")
+SPECIAL_CAMPAIGN_CODES = ("code_5", "code_6")
 
 
 def local_time(dt: datetime, fmt: str = "%Y-%m-%d %H:%M:%S"):
@@ -32,6 +33,17 @@ def local_time(dt: datetime, fmt: str = "%Y-%m-%d %H:%M:%S"):
 
 
 templates.env.filters["local_time"] = local_time
+
+
+def _apply_scope_filter(query, scope: str):
+    normalized_scope = scope if scope in {"regular", "special"} else "regular"
+    campaign_code = func.lower(Campaign.code)
+    query = query.outerjoin(Campaign, Campaign.id == FeedbackResponse.campaign_id)
+    if normalized_scope == "special":
+        return query.filter(campaign_code.in_(SPECIAL_CAMPAIGN_CODES))
+    return query.filter(
+        (Campaign.id.is_(None)) | (Campaign.code.is_(None)) | (~campaign_code.in_(SPECIAL_CAMPAIGN_CODES))
+    )
 
 
 def _normalize_ascii(text: str) -> str:
@@ -66,6 +78,7 @@ def _normalize_ascii(text: str) -> str:
 @router.get("/")
 async def list_responses(
     request: Request,
+    scope: str = Query("regular"),
     campaign_id: str | None = Query(None),
     q: str | None = Query(None),
     start_date: str | None = Query(None),
@@ -74,7 +87,8 @@ async def list_responses(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    query = db.query(FeedbackResponse)
+    active_scope = scope if scope in {"regular", "special"} else "regular"
+    query = _apply_scope_filter(db.query(FeedbackResponse), active_scope)
     campaign_id_val: int | None = None
     if campaign_id and str(campaign_id).strip().isdigit():
         campaign_id_val = int(campaign_id)
@@ -102,12 +116,20 @@ async def list_responses(
     if status:
         query = query.filter(FeedbackResponse.status == status)
     responses = query.order_by(FeedbackResponse.submission_time.desc()).all()
-    campaigns = db.query(Campaign).all()
+    campaigns_query = db.query(Campaign)
+    if active_scope == "special":
+        campaigns_query = campaigns_query.filter(func.lower(Campaign.code).in_(SPECIAL_CAMPAIGN_CODES))
+    else:
+        campaigns_query = campaigns_query.filter(
+            (Campaign.code.is_(None)) | (~func.lower(Campaign.code).in_(SPECIAL_CAMPAIGN_CODES))
+        )
+    campaigns = campaigns_query.order_by(Campaign.name).all()
     return templates.TemplateResponse(
         "responses/list.html",
         {
             "request": request,
             "responses": responses,
+            "active_scope": active_scope,
             "campaigns": campaigns,
             "selected_campaign": campaign_id_val,
             "search": q or "",
@@ -121,13 +143,14 @@ async def list_responses(
 
 def _base_response_query(
     db: Session,
+    scope: str,
     campaign_id: int | None,
     q: str | None,
     start_date: str | None,
     end_date: str | None,
     status: str | None,
 ):
-    query = db.query(FeedbackResponse)
+    query = _apply_scope_filter(db.query(FeedbackResponse), scope)
     if campaign_id:
         query = query.filter(FeedbackResponse.campaign_id == campaign_id)
     if q:
@@ -159,6 +182,7 @@ def _base_response_query(
 @router.get("/export.csv")
 async def export_responses(
     request: Request,
+    scope: str = Query("regular"),
     campaign_id: str | None = Query(None),
     q: str | None = Query(None),
     start_date: str | None = Query(None),
@@ -168,13 +192,14 @@ async def export_responses(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
+    active_scope = scope if scope in {"regular", "special"} else "regular"
     campaign_id_val = int(campaign_id) if campaign_id and campaign_id.isdigit() else None
 
     if ids:
         id_list = [int(x) for x in ids.split(",") if x.strip().isdigit()]
         query = db.query(FeedbackResponse).filter(FeedbackResponse.id.in_(id_list))
     else:
-        query = _base_response_query(db, campaign_id_val, q, start_date, end_date, status)
+        query = _base_response_query(db, active_scope, campaign_id_val, q, start_date, end_date, status)
 
     rows = query.order_by(FeedbackResponse.submission_time.desc()).all()
 
@@ -470,10 +495,12 @@ async def update_response_status(
     if action == "close":
         response.status = "closed"
         response.needs_manual_review = False
+        response.has_updates = True
         db.commit()
     elif action == "create_ticket":
         response.is_complaint = True
         response.status = "ticket_created"
+        response.has_updates = True
         db.commit()
         create_ticket_if_needed(db, response)
     return RedirectResponse(url=f"/responses/{response_id}", status_code=302)

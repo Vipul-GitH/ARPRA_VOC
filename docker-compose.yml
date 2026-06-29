@@ -1,6 +1,18 @@
 version: '3.9'
 services:
+  nginx:
+    image: nginx:1.27-alpine
+    depends_on:
+      app:
+        condition: service_started
+    ports:
+      - "4668:80"
+    volumes:
+      - ./conf/default.conf:/etc/nginx/conf.d/default.conf:ro
+    restart: always
+
   app:
+    container_name: arpra-voc-app
     build: ./backend
     ports:
       - "4000:8000"
@@ -22,6 +34,7 @@ services:
       sh -c "python -c 'import time; time.sleep(5)' &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000"
   phpmyadmin:
+    container_name: arpra-voc-phpmyadmin
     image: phpmyadmin:5
     depends_on:
       db:
@@ -34,9 +47,10 @@ services:
       - PMA_ALLOW_NO_PASSWORD=yes
       - MYSQL_ROOT_PASSWORD=rootpass
     ports:
-      - "8081:80"
+      - "8084:80"
     restart: always
   db:
+    container_name: arpra-voc-db
     image: mysql:8
     restart: always
     environment:

@@ -33,6 +33,19 @@ def _parse_selected_values(raw: Any) -> list[str]:
     return [str(raw)]
 
 
+def _pick_sentiment(option_sentiments: list[str]) -> str | None:
+    if not option_sentiments:
+        return None
+    lowered = [str(s).lower() for s in option_sentiments if s]
+    if "negative" in lowered:
+        return "negative"
+    if "neutral" in lowered:
+        return "neutral"
+    if "positive" in lowered:
+        return "positive"
+    return lowered[0] if lowered else None
+
+
 def main():
     settings = get_settings()
     engine = create_engine(settings.database_url, pool_pre_ping=True)
@@ -53,11 +66,13 @@ def main():
                 values = _parse_selected_values(ans.selected_option_values)
                 if not values or not ans.question or not ans.question.options:
                     continue
+                option_sentiments: list[str] = []
                 for opt in ans.question.options:
                     if str(opt.option_value) in values:
-                        ans.sentiment = opt.sentiment
-                        break
-            compute_scores(response, response.answers)
+                        if opt.sentiment:
+                            option_sentiments.append(opt.sentiment)
+                ans.sentiment = _pick_sentiment(option_sentiments)
+            compute_scores(response, response.answers, response.campaign.code if response.campaign else None)
             # Skip closed responses entirely
             if response.status == "closed":
                 continue

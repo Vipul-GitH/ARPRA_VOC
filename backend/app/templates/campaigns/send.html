@@ -36,7 +36,7 @@
             <select name="campaign_id" class="w-full border rounded px-3 py-2" required>
                 <option value="">Select campaign</option>
                 {% for c in campaigns %}
-                    <option value="{{ c.id }}">{{ c.name }} ({{ c.code }})</option>
+                    <option value="{{ c.id }}" {% if selected_campaign_id == c.id %}selected{% endif %}>{{ c.name }} ({{ c.code }})</option>
                 {% endfor %}
             </select>
         </div>

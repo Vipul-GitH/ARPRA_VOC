@@ -18,6 +18,26 @@ from app.routers.auth import get_current_user
 
 router = APIRouter(tags=["dashboard"])
 templates = Jinja2Templates(directory="app/templates")
+SPECIAL_CAMPAIGN_CODES = ("code_5", "code_6")
+
+
+def _regular_campaign_filter(query, campaign_id_col):
+    campaign_code = func.lower(Campaign.code)
+    return (
+        query.outerjoin(Campaign, Campaign.id == campaign_id_col)
+        .filter(
+            _regular_campaign_condition()
+        )
+    )
+
+
+def _regular_campaign_condition():
+    campaign_code = func.lower(Campaign.code)
+    return (
+        (Campaign.id.is_(None))
+        | (Campaign.code.is_(None))
+        | (~campaign_code.in_(SPECIAL_CAMPAIGN_CODES))
+    )
 
 
 @router.get("/dashboard")
@@ -66,13 +86,13 @@ async def dashboard(
 
     # Windowed aggregates
     window_feedback = (
-        db.query(func.count(FeedbackResponse.id))
+        _regular_campaign_filter(db.query(func.count(FeedbackResponse.id)), FeedbackResponse.campaign_id)
         .filter(FeedbackResponse.submission_time.between(window_start, window_end))
         .scalar()
         or 0
     )
     window_complaints = (
-        db.query(func.count(FeedbackResponse.id))
+        _regular_campaign_filter(db.query(func.count(FeedbackResponse.id)), FeedbackResponse.campaign_id)
         .filter(FeedbackResponse.is_complaint.is_(True))
         .filter(FeedbackResponse.submission_time.between(window_start, window_end))
         .scalar()
@@ -81,7 +101,7 @@ async def dashboard(
     complaint_rate = round((window_complaints / window_feedback) * 100, 1) if window_feedback else 0
 
     prior_feedback = (
-        db.query(func.count(FeedbackResponse.id))
+        _regular_campaign_filter(db.query(func.count(FeedbackResponse.id)), FeedbackResponse.campaign_id)
         .filter(FeedbackResponse.submission_time.between(prior_start, prior_end))
         .scalar()
         or 0
@@ -89,31 +109,39 @@ async def dashboard(
     feedback_delta = window_feedback - prior_feedback
 
     # Lifetime basics
-    total_feedback = db.query(func.count(FeedbackResponse.id)).scalar() or 0
+    total_feedback = (
+        _regular_campaign_filter(db.query(func.count(FeedbackResponse.id)), FeedbackResponse.campaign_id).scalar() or 0
+    )
     open_statuses = ["open", "in_progress"]
     open_tickets = (
-        db.query(FeedbackTicket)
+        _regular_campaign_filter(db.query(FeedbackTicket), FeedbackTicket.campaign_id)
         .filter(FeedbackTicket.status.in_(open_statuses))
         .count()
     )
 
     # Ticket breakdowns
     tickets_by_status_rows = (
-        db.query(FeedbackTicket.status, func.count(FeedbackTicket.id))
+        _regular_campaign_filter(
+            db.query(FeedbackTicket.status, func.count(FeedbackTicket.id)),
+            FeedbackTicket.campaign_id,
+        )
         .group_by(FeedbackTicket.status)
         .all()
     )
     tickets_by_status = {row[0] or "unknown": row[1] for row in tickets_by_status_rows} if tickets_by_status_rows else {}
 
     tickets_by_severity_rows = (
-        db.query(FeedbackTicket.severity, func.count(FeedbackTicket.id))
+        _regular_campaign_filter(
+            db.query(FeedbackTicket.severity, func.count(FeedbackTicket.id)),
+            FeedbackTicket.campaign_id,
+        )
         .group_by(FeedbackTicket.severity)
         .all()
     )
     tickets_by_severity = {row[0] or "unknown": row[1] for row in tickets_by_severity_rows} if tickets_by_severity_rows else {}
 
     open_ticket_dates = (
-        db.query(FeedbackTicket.created_at)
+        _regular_campaign_filter(db.query(FeedbackTicket.created_at), FeedbackTicket.campaign_id)
         .filter(FeedbackTicket.status.in_(open_statuses))
         .all()
     )
@@ -127,7 +155,8 @@ async def dashboard(
 
     # Campaign response rates & top movers
     response_stats = (
-        db.query(
+        _regular_campaign_filter(
+            db.query(
             FeedbackResponse.campaign_id.label("cid"),
             func.count(FeedbackResponse.id).label("responses"),
             func.sum(
@@ -136,14 +165,19 @@ async def dashboard(
                     else_=0,
                 )
             ).label("complaints"),
+            ),
+            FeedbackResponse.campaign_id,
         )
         .group_by(FeedbackResponse.campaign_id)
         .subquery()
     )
     recipient_stats = (
-        db.query(
+        _regular_campaign_filter(
+            db.query(
             CampaignRecipient.campaign_id.label("cid"),
             func.count(CampaignRecipient.id).label("recipients"),
+            ),
+            CampaignRecipient.campaign_id,
         )
         .group_by(CampaignRecipient.campaign_id)
         .subquery()
@@ -157,6 +191,7 @@ async def dashboard(
         )
         .outerjoin(response_stats, response_stats.c.cid == Campaign.id)
         .outerjoin(recipient_stats, recipient_stats.c.cid == Campaign.id)
+        .filter(_regular_campaign_condition())
         .order_by(func.coalesce(response_stats.c.responses, 0).desc(), Campaign.name)
         .limit(5)
         .all()
@@ -164,7 +199,7 @@ async def dashboard(
 
     # Manual review queue & rewards
     manual_review_count = (
-        db.query(func.count(FeedbackResponse.id))
+        _regular_campaign_filter(db.query(func.count(FeedbackResponse.id)), FeedbackResponse.campaign_id)
         .filter(FeedbackResponse.needs_manual_review.is_(True))
         .scalar()
         or 0
@@ -177,6 +212,7 @@ async def dashboard(
             Campaign.name,
         )
         .join(Campaign, Campaign.id == FeedbackResponse.campaign_id)
+        .filter(_regular_campaign_condition())
         .filter(FeedbackResponse.needs_manual_review.is_(True))
         .order_by(FeedbackResponse.submission_time.desc())
         .limit(5)
@@ -184,7 +220,12 @@ async def dashboard(
     )
 
     pending_rewards = (
-        db.query(func.count(ResponseReward.id))
+        _regular_campaign_filter(
+            db.query(func.count(ResponseReward.id)).join(
+                FeedbackResponse, FeedbackResponse.id == ResponseReward.response_id
+            ),
+            FeedbackResponse.campaign_id,
+        )
         .filter(ResponseReward.status == "pending")
         .scalar()
         or 0
@@ -192,10 +233,13 @@ async def dashboard(
 
     # Sentiment mix by language (windowed)
     sentiment_rows = (
-        db.query(
+        _regular_campaign_filter(
+            db.query(
             FeedbackResponse.language,
             FeedbackResponse.overall_sentiment,
             func.count(FeedbackResponse.id),
+            ),
+            FeedbackResponse.campaign_id,
         )
         .filter(FeedbackResponse.submission_time.between(window_start, window_end))
         .group_by(FeedbackResponse.language, FeedbackResponse.overall_sentiment)
@@ -211,6 +255,7 @@ async def dashboard(
     campaign_breakdown = (
         db.query(Campaign.name, func.count(FeedbackResponse.id))
         .join(FeedbackResponse, FeedbackResponse.campaign_id == Campaign.id)
+        .filter(_regular_campaign_condition())
         .filter(FeedbackResponse.submission_time.between(window_start, window_end))
         .group_by(Campaign.name)
         .order_by(func.count(FeedbackResponse.id).desc())
@@ -219,7 +264,10 @@ async def dashboard(
     )
 
     daily_trend = (
-        db.query(func.date(FeedbackResponse.submission_time).label("date"), func.count(FeedbackResponse.id))
+        _regular_campaign_filter(
+            db.query(func.date(FeedbackResponse.submission_time).label("date"), func.count(FeedbackResponse.id)),
+            FeedbackResponse.campaign_id,
+        )
         .filter(FeedbackResponse.submission_time.between(window_start, window_end))
         .group_by(func.date(FeedbackResponse.submission_time))
         .order_by(func.date(FeedbackResponse.submission_time))
@@ -234,6 +282,7 @@ async def dashboard(
             Campaign.name,
         )
         .join(Campaign, Campaign.id == FeedbackResponse.campaign_id)
+        .filter(_regular_campaign_condition())
         .order_by(FeedbackResponse.submission_time.desc())
         .limit(10)
         .all()
@@ -241,6 +290,7 @@ async def dashboard(
 
     campaign_statuses = (
         db.query(Campaign)
+        .filter(_regular_campaign_condition())
         .order_by(func.coalesce(Campaign.updated_at, Campaign.created_at).desc(), Campaign.created_at.desc())
         .limit(6)
         .all()

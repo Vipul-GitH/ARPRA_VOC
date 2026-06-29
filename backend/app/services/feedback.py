@@ -7,10 +7,15 @@ from sqlalchemy.orm import Session
 from app.models import FeedbackAnswer, FeedbackResponse, FeedbackTicket
 
 
-def compute_scores(response: FeedbackResponse, answers: List[FeedbackAnswer]):
+def compute_scores(
+    response: FeedbackResponse,
+    answers: List[FeedbackAnswer],
+    campaign_code: str | None = None,
+):
     # Scoring disabled; use only sentiment.
     response.overall_score = None
     response.overall_rating_value = None
+    normalized_campaign_code = (campaign_code or "").strip().lower()
 
     has_negative = any(a.sentiment == "negative" for a in answers)
     has_neutral = any(a.sentiment == "neutral" for a in answers)
@@ -25,7 +30,11 @@ def compute_scores(response: FeedbackResponse, answers: List[FeedbackAnswer]):
         response.status = "manual_review"
     else:
         response.overall_sentiment = "positive"
-        response.status = "auto_processed"
+        if normalized_campaign_code == "code_3":
+            response.needs_manual_review = True
+            response.status = "manual_review"
+        else:
+            response.status = "auto_processed"
 
 
 def create_ticket_if_needed(db: Session, response: FeedbackResponse) -> Optional[FeedbackTicket]:

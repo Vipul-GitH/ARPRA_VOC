@@ -58,10 +58,10 @@ except ImportError:  # pragma: no cover - fallback if reportlab not installed
 
 router = APIRouter(tags=["campaigns"])
 templates = Jinja2Templates(directory="app/templates")
-PUBLIC_HOST = "https://labmate.bhasinpathlabs.com:4667"
-WHATSAPP_SEND_API = "http://192.168.0.71:3004/api/messages/send"
+PUBLIC_HOST = "https://labmate.bhasinpathlabs.com:4668"
+WHATSAPP_SEND_API = "http://10.1.1.44:3004/api/messages/send"
 WHATSAPP_ACCOUNT_ID = 1
-WHATSAPP_MEDIA_URL = "https://labmate.bhasinpathlabs.com:4667/static/img/santa.gif"
+WHATSAPP_MEDIA_URL = "https://labmate.bhasinpathlabs.com:4668/static/img/santa.gif"
 
 
 @router.get("/")
@@ -379,12 +379,22 @@ def _encode_image_b64(path: Path) -> tuple[str, str]:
 
 @router.get("/send")
 async def send_campaign(
-    request: Request, db: Session = Depends(get_db), user=Depends(require_role("admin"))
+    request: Request,
+    campaign_id: int | None = None,
+    db: Session = Depends(get_db),
+    user=Depends(require_role("admin")),
 ):
     campaigns = db.query(Campaign).order_by(Campaign.name).all()
     return templates.TemplateResponse(
         "campaigns/send.html",
-        {"request": request, "user": user, "campaigns": campaigns, "summary": None, "error": None},
+        {
+            "request": request,
+            "user": user,
+            "campaigns": campaigns,
+            "selected_campaign_id": campaign_id,
+            "summary": None,
+            "error": None,
+        },
     )
 
 
@@ -414,19 +424,20 @@ async def upload_recipients(
         db.add(recipient_list)
         db.flush()
 
+        recipient_rows: List[dict] = []
         for entry in contacts:
-            db.add(
-                CampaignRecipient(
-                    recipient_list_id=recipient_list.id,
-                    campaign_id=campaign_id,
-                    pii_data_json={"name": entry["name"], "contact": entry["contact"]},
-                    status="pending",
-                )
+            recipient = CampaignRecipient(
+                recipient_list_id=recipient_list.id,
+                campaign_id=campaign_id,
+                pii_data_json={"name": entry["name"], "contact": entry["contact"]},
+                personalized_link_token=uuid4().hex,
+                status="pending",
             )
+            db.add(recipient)
+            recipient_rows.append({"entry": entry, "recipient": recipient})
         db.commit()
 
         # Send WhatsApp messages
-        base_link = f"{PUBLIC_HOST}/feedback/{campaign.code if campaign.code else campaign.id}"
         media_url = WHATSAPP_MEDIA_URL
         media_data = None
         try:
@@ -440,15 +451,19 @@ async def upload_recipients(
         success_count = 0
         failed = []
         details: List[dict] = []
-        for entry in contacts:
+        for row in recipient_rows:
+            entry = row["entry"]
+            recipient = row["recipient"]
             target = _normalize_contact(entry["contact"])
             if not target:
+                recipient.status = "failed"
                 failed.append({"target": entry["contact"], "error": "invalid contact"})
                 details.append({"target": entry["contact"], "name": entry["name"], "status": "failed", "error": "invalid contact"})
                 continue
             mobile_param = quote(target[-10:]) if len(target) >= 10 else quote(target)
             name_param = quote(entry["name"])
-            link = f"{base_link}?name={name_param}&mobile={mobile_param}&country=91"
+            token = recipient.personalized_link_token or str(campaign.code if campaign.code else campaign.id)
+            link = f"{PUBLIC_HOST}/feedback/{token}?name={name_param}&mobile={mobile_param}&country=91"
             # Custom message for campaign code_5
             if (campaign.code or "").lower() == "code_5":
                 nm = entry["name"]
@@ -457,13 +472,23 @@ async def upload_recipients(
                     "At Dr Bhasin’s Lab, accuracy and patient safety depend on people, not machines alone.\n"
                     "This feedback is not for fault-finding. It is to understand your experience, improve systems, and support you better.\n"
                     "Your honest responses will help us work better together and serve patients better.\n"
-                    "Share Your Experience here:nctrckg.com/bjgKlo9\n\n"
+                    f"Share Your Experience here: {link}\n\n"
                     f"प्रिय {nm} ,\n"
                     "डॉ. भसीन लैब में सटीकता और मरीजों की सुरक्षा केवल मशीनों से नहीं, बल्कि लोगों से सुनिश्चित होती है।\n"
                     "यह फीडबैक किसी की गलती निकालने के लिए नहीं है। इसका उद्देश्य आपके अनुभव को समझना, कार्यप्रणाली सुधारना और आपको बेहतर सहयोग देना है।\n"
                     "आपकी ईमानदार राय हमें बेहतर काम करने और मरीजों को बेहतर सेवा देने में मदद करेगी।\n"
-                    "अपना अनुभव यहां साझा करें:nctrckg.com/bAHnO7E\n\n"
+                    f"अपना अनुभव यहां साझा करें: {link}\n\n"
                     "With Care,\nDr Vishu Bhasin & Dr Vipul Bhasin\nDr Bhasin's Lab"
+                )
+            elif (campaign.code or "").lower() == "code_6":
+                msg = (
+                    "Tomorrow is our Director Dr. Vipul Bhasin’s birthday. "
+                    "We have shared a small feedback form where you can wish Sir. "
+                    "Please fill out the form and send your good wishes to Sir. Thank you.\n\n"
+                    "कल हमारे निदेशक डॉ. विपुल भसीन का जन्मदिन है। "
+                    "इसके लिए हमने एक छोटा फीडबैक फॉर्म साझा किया है, जिसमें आप सर को शुभकामनाएं दे सकते हैं। "
+                    "कृपया फॉर्म भरें और सर को अपनी शुभकामनाएं दें। धन्यवाद।\n\n"
+                    f"{link}"
                 )
             else:
                 msg = f"Hi {entry['name']}, please share your feedback: {link}"
@@ -480,14 +505,19 @@ async def upload_recipients(
             try:
                 resp = requests.post(WHATSAPP_SEND_API, json=payload, timeout=8)
                 if 200 <= resp.status_code < 300:
+                    recipient.status = "complete"
                     success_count += 1
                     details.append({"target": entry["contact"], "name": entry["name"], "status": "success"})
                 else:
+                    recipient.status = "failed"
                     failed.append({"target": entry["contact"], "error": f"HTTP {resp.status_code}"})
                     details.append({"target": entry["contact"], "name": entry["name"], "status": "failed", "error": f"HTTP {resp.status_code}", "body": resp.text[:200] if resp.text else ""})
             except Exception as exc:
+                recipient.status = "failed"
                 failed.append({"target": entry["contact"], "error": str(exc)})
                 details.append({"target": entry["contact"], "name": entry["name"], "status": "failed", "error": str(exc)})
+
+        db.commit()
 
         summary = {
             "count": len(contacts),
@@ -520,12 +550,26 @@ async def upload_recipients(
             print(f"[CampaignSend] log write failed: {e}")
         return templates.TemplateResponse(
             "campaigns/send.html",
-            {"request": request, "user": user, "campaigns": campaigns, "summary": summary, "error": None},
+            {
+                "request": request,
+                "user": user,
+                "campaigns": campaigns,
+                "selected_campaign_id": campaign_id,
+                "summary": summary,
+                "error": None,
+            },
         )
     except HTTPException as exc:
         return templates.TemplateResponse(
             "campaigns/send.html",
-            {"request": request, "user": user, "campaigns": campaigns, "summary": None, "error": exc.detail},
+            {
+                "request": request,
+                "user": user,
+                "campaigns": campaigns,
+                "selected_campaign_id": campaign_id,
+                "summary": None,
+                "error": exc.detail,
+            },
             status_code=exc.status_code,
         )
 
@@ -597,7 +641,8 @@ async def create_campaign(
             },
             status_code=400,
         )
-    return RedirectResponse(url="/campaigns/", status_code=302)
+    db.refresh(campaign)
+    return RedirectResponse(url=f"/questionnaire/{campaign.id}", status_code=302)
 
 
 @router.get("/{campaign_id}/edit")

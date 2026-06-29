@@ -108,7 +108,6 @@
         <nav class="flex flex-wrap items-center gap-2 text-sm font-semibold">
             <a href="/dashboard" class="nav-link {{ 'nav-active' if request.url.path.startswith('/dashboard') else '' }}">Dashboard</a>
             <a href="/campaigns/" class="nav-link {{ 'nav-active' if request.url.path.startswith('/campaigns') and not request.url.path.startswith('/campaigns/send') else '' }}">Campaigns</a>
-            <a href="/campaigns/send" class="nav-link {{ 'nav-active' if request.url.path.startswith('/campaigns/send') else '' }}">Send Campaign</a>
             <a href="/master_questions/" class="nav-link {{ 'nav-active' if request.url.path.startswith('/master_questions') else '' }}">Master Questions</a>
             <a href="/responses/" class="nav-link {{ 'nav-active' if request.url.path.startswith('/responses') else '' }}">Responses</a>
             <a href="/tickets/" class="nav-link {{ 'nav-active' if request.url.path.startswith('/tickets') else '' }}">Tickets</a>

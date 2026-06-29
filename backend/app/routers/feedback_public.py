@@ -1,11 +1,11 @@
 import json
 from typing import Optional
+from urllib.parse import quote_plus
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine.url import make_url
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -36,8 +36,14 @@ def load_campaign_by_token(db: Session, token: str) -> tuple[Campaign, Optional[
 
 def _phlebo_engine():
     settings = get_settings()
-    url = make_url(settings.database_url).set(database="phlebo_summary")
-    return create_engine(str(url), pool_pre_ping=True)
+    if not all([settings.mysql_host, settings.mysql_port, settings.mysql_user, settings.mysql_db]):
+        raise ValueError("Missing MYSQL_* settings for booking prefill")
+    mysql_password = quote_plus(settings.mysql_password or "")
+    db_url = (
+        f"mysql+pymysql://{settings.mysql_user}:{mysql_password}"
+        f"@{settings.mysql_host}:{settings.mysql_port}/{settings.mysql_db}"
+    )
+    return create_engine(db_url, pool_pre_ping=True)
 
 
 def _prefill_from_booking(request: Request) -> dict:
@@ -54,13 +60,25 @@ def _prefill_from_booking(request: Request) -> dict:
     if not bookingid and not mobile_param:
         return prefill
     try:
+        mobile_digits = "".join(ch for ch in str(mobile_param or "") if ch.isdigit())
+        mobile10 = mobile_digits[-10:] if len(mobile_digits) >= 10 else mobile_digits
         engine = _phlebo_engine()
         with engine.connect() as conn:
             row = None
             if bookingid:
                 row = conn.execute(
                     text(
-                        "SELECT customername, mobile, bookingid FROM tblbooking WHERE bookingid = :bid LIMIT 1"
+                        """
+                        SELECT
+                            pm.full_name AS customername,
+                            pm.contact_mobile AS mobile,
+                            bp.id AS bookingid
+                        FROM hhome_collection_booking_patient bp
+                        JOIN hpatient_master pm
+                            ON pm.id = bp.patient_id
+                        WHERE bp.id = :bid
+                        LIMIT 1
+                        """
                     ),
                     {"bid": bookingid},
                 ).mappings().first()
@@ -68,14 +86,19 @@ def _prefill_from_booking(request: Request) -> dict:
                 row = conn.execute(
                     text(
                         """
-                        SELECT customername, mobile, bookingid
-                        FROM tblbooking
-                        WHERE mobile = :mob
-                        ORDER BY bookingid DESC
+                        SELECT
+                            pm.full_name AS customername,
+                            pm.contact_mobile AS mobile,
+                            bp.id AS bookingid
+                        FROM hhome_collection_booking_patient bp
+                        JOIN hpatient_master pm
+                            ON pm.id = bp.patient_id
+                        WHERE RIGHT(REGEXP_REPLACE(COALESCE(pm.contact_mobile, ''), '[^0-9]', ''), 10) = :mob
+                        ORDER BY bp.id DESC
                         LIMIT 1
                         """
                     ),
-                    {"mob": mobile_param},
+                    {"mob": mobile10},
                 ).mappings().first()
             if row:
                 if not prefill["name"]:
@@ -88,6 +111,23 @@ def _prefill_from_booking(request: Request) -> dict:
     except Exception:
         pass
     return prefill
+
+
+def _mark_booking_responses_submitted(db: Session, mobile_number: str):
+    digits = "".join(ch for ch in str(mobile_number or "") if ch.isdigit())
+    if len(digits) < 10:
+        return
+    mobile10 = digits[-10:]
+    db.execute(
+        text(
+            """
+            UPDATE bookings
+            SET isResponseSubmitted = 1
+            WHERE RIGHT(REGEXP_REPLACE(COALESCE(mobile, ''), '[^0-9]', ''), 10) = :mobile10
+            """
+        ),
+        {"mobile10": mobile10},
+    )
 
 
 @router.get("/{token}")
@@ -104,10 +144,7 @@ async def view_form(token: str, request: Request, db: Session = Depends(get_db))
     first_question = questions[0] if questions else None
     total_questions = len(questions)
     flow_rules_data = []
-    if campaign.code and campaign.code.lower() == "code_5":
-        prefill = {"name": "", "mobile_country": "+91", "mobile_number": "", "lab_id": ""}
-    else:
-        prefill = _prefill_from_booking(request)
+    prefill = _prefill_from_booking(request)
     # Special case: Campaign CODE_5 needs Q16 branching to thank-you.
     skip_q_id = None
     skip_q_order = None
@@ -168,10 +205,7 @@ async def submit_form(token: str, request: Request, db: Session = Depends(get_db
     first_question = questions[0] if questions else None
     total_questions = len(questions)
     flow_rules_data = []
-    if campaign.code and campaign.code.lower() == "code_5":
-        prefill = {"name": "", "mobile_country": "+91", "mobile_number": "", "lab_id": ""}
-    else:
-        prefill = _prefill_from_booking(request)
+    prefill = _prefill_from_booking(request)
     skip_q_id = None
     skip_q_order = None
     skip_values: list[str] = []
@@ -259,16 +293,22 @@ async def submit_form(token: str, request: Request, db: Session = Depends(get_db
         score = None
         follow_up_text = None
         if selected_option_values:
-            option = (
-                db.query(CampaignQuestionOption)
-                .filter(
-                    CampaignQuestionOption.campaign_question_id == question.id,
-                    CampaignQuestionOption.option_value == selected_option_values[0],
-                )
-                .first()
-            )
-            if option:
-                sentiment = option.sentiment
+            selected_set = {str(v) for v in selected_option_values if v is not None}
+            selected_sentiments: list[str] = []
+            for opt in (question.options or []):
+                if opt.option_value is None:
+                    continue
+                if str(opt.option_value) in selected_set and opt.sentiment:
+                    selected_sentiments.append(str(opt.sentiment).lower())
+            if selected_sentiments:
+                if "negative" in selected_sentiments:
+                    sentiment = "negative"
+                elif "neutral" in selected_sentiments:
+                    sentiment = "neutral"
+                elif "positive" in selected_sentiments:
+                    sentiment = "positive"
+                else:
+                    sentiment = selected_sentiments[0]
                 score = None
         # capture follow-up text if any selected option has follow-up
         if question.options:
@@ -295,9 +335,15 @@ async def submit_form(token: str, request: Request, db: Session = Depends(get_db
         answers.append(ans)
     db.commit()
 
-    compute_scores(response, answers)
+    compute_scores(response, answers, campaign.code if campaign else None)
     db.commit()
     create_ticket_if_needed(db, response)
+    try:
+        _mark_booking_responses_submitted(db, mobile_number)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[FeedbackPublic] Failed to mark booking responses submitted: {exc}")
 
     return templates.TemplateResponse(
         "feedback/thank_you.html",

@@ -13,8 +13,8 @@ from app.config import get_settings
 
 class BookingSync:
     """
-    Pulls tblbooking rows from an external database where startbookingapp=2
-    and upserts them into arpra_voc.booking.
+    Pulls home collection patient rows from an external read-only database
+    and upserts them into arpra_voc.bookings.
     """
 
     def __init__(self, base_db_url: str):
@@ -161,11 +161,21 @@ class BookingSync:
     def process_pending_bookings(self):
         query = text(
             """
-            SELECT bookingid, customername, dob, slot, mobile, enterdate
-            FROM tblbooking
-            WHERE startappbooking = 2
-              AND DATE(enterdate) = CURDATE()
-            ORDER BY bookingid ASC
+            SELECT
+                bp.id AS bookingid,
+                pm.full_name AS customername,
+                pm.date_of_birth AS dob,
+                b.preferred_time_slot AS slot,
+                pm.contact_mobile AS mobile,
+                CAST(b.preferred_visit_date AS DATETIME) AS enterdate
+            FROM hhome_collection_booking_patient bp
+            JOIN hhome_collection_booking b
+                ON b.id = bp.booking_id
+            JOIN hpatient_master pm
+                ON pm.id = bp.patient_id
+            WHERE bp.booking_patient_status = 3
+              AND b.preferred_visit_date = CURDATE()
+            ORDER BY bp.id ASC
             LIMIT 500
             """
         )
