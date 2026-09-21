@@ -37,9 +37,15 @@ def compute_scores(
             response.status = "auto_processed"
 
 
-def create_ticket_if_needed(db: Session, response: FeedbackResponse) -> Optional[FeedbackTicket]:
+def create_ticket_if_needed(db: Session, response: FeedbackResponse, commit: bool = True) -> Optional[FeedbackTicket]:
     if not response.is_complaint:
         return None
+    if response.ticket_id:
+        return db.query(FeedbackTicket).get(response.ticket_id)
+    existing = db.query(FeedbackTicket).filter(FeedbackTicket.response_id == response.id).first()
+    if existing:
+        response.ticket_id = existing.id
+        return existing
     ticket = FeedbackTicket(
         ticket_number=f"TKT-{response.id}",
         response_id=response.id,
@@ -49,8 +55,9 @@ def create_ticket_if_needed(db: Session, response: FeedbackResponse) -> Optional
         details="System generated ticket for complaint",
     )
     db.add(ticket)
-    db.commit()
-    db.refresh(ticket)
+    db.flush()
     response.ticket_id = ticket.id
-    db.commit()
+    if commit:
+        db.commit()
+        db.refresh(ticket)
     return ticket

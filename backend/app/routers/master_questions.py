@@ -1,9 +1,11 @@
+import math
 from typing import List
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
 from app.models import MasterQuestion, MasterQuestionOption, CampaignQuestion
@@ -19,11 +21,41 @@ def wants_json(request: Request) -> bool:
 
 
 @router.get("/")
-async def list_master_questions(request: Request, db: Session = Depends(get_db), user=Depends(require_role("admin"))):
-    masters = db.query(MasterQuestion).order_by(MasterQuestion.code).all()
+async def list_master_questions(
+    request: Request,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(25, ge=1, le=100),
+    db: Session = Depends(get_db),
+    user=Depends(require_role("admin")),
+):
+    total = db.query(MasterQuestion).count()
+    total_pages = max(math.ceil(total / per_page), 1)
+    page = min(page, total_pages)
+    offset = (page - 1) * per_page
+    masters = (
+        db.query(MasterQuestion)
+        .options(selectinload(MasterQuestion.options))
+        .order_by(MasterQuestion.code)
+        .offset(offset)
+        .limit(per_page)
+        .all()
+    )
+
+    def page_url(target_page: int) -> str:
+        return "?" + urlencode({"page": target_page, "per_page": per_page})
+
     return templates.TemplateResponse(
         "master_questions/list.html",
-        {"request": request, "user": user, "masters": masters},
+        {
+            "request": request,
+            "user": user,
+            "masters": masters,
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+            "total_pages": total_pages,
+            "page_url": page_url,
+        },
     )
 
 

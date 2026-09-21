@@ -12,12 +12,14 @@ from app.routers import auth, campaigns, dashboard, feedback_public, master_ques
 # from app.services.booking_notifier import BookingNotifier
 from app.services.booking_sync import BookingSync
 from app.services.booking_campaign_sender import BookingCampaignSender
+from app.services.daily_summary import start_daily_summary_scheduler, stop_daily_summary_scheduler
 import pytz
 from datetime import datetime
 
 settings = get_settings()
 
-Base.metadata.create_all(bind=engine)
+if settings.create_db_on_startup:
+    Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title=settings.app_name)
 # notifier: BookingNotifier | None = None
@@ -77,24 +79,48 @@ app.include_router(master_questions.router, prefix="/master_questions")
 @app.on_event("startup")
 async def _start_notifier():
     # BookingNotifier disabled for now.
-    print("[BookingSync] startup hook entered")
     global booking_sync
-    try:
-        booking_sync = BookingSync(base_db_url=settings.database_url)
-        booking_sync.start()
-        print("[BookingSync] registered from startup")
-    except Exception as exc:
-        booking_sync = None
-        print(f"[BookingSync] failed to start: {exc}")
-    print("[BookingCampaignSender] startup hook entered")
+    if settings.enable_booking_sync:
+        print("[BookingSync] startup hook entered")
+        try:
+            booking_sync = BookingSync(base_db_url=settings.database_url)
+            booking_sync.start()
+            print("[BookingSync] registered from startup")
+        except Exception as exc:
+            booking_sync = None
+            print(f"[BookingSync] failed to start: {exc}")
+    else:
+        print("[BookingSync] disabled")
+
     global campaign_sender
-    try:
-        campaign_sender = BookingCampaignSender(base_db_url=settings.database_url)
-        campaign_sender.start()
-        print("[BookingCampaignSender] registered from startup")
-    except Exception as exc:
-        campaign_sender = None
-        print(f"[BookingCampaignSender] failed to start: {exc}")
+    if settings.enable_booking_campaign_sender:
+        print("[BookingCampaignSender] startup hook entered")
+        try:
+            campaign_sender = BookingCampaignSender(base_db_url=settings.database_url)
+            campaign_sender.start()
+            print("[BookingCampaignSender] registered from startup")
+        except Exception as exc:
+            campaign_sender = None
+            print(f"[BookingCampaignSender] failed to start: {exc}")
+    else:
+        print("[BookingCampaignSender] disabled")
+
+    if settings.enable_campaign_send_worker:
+        print("[CampaignSendWorker] startup hook entered")
+        try:
+            campaigns.start_campaign_send_worker()
+        except Exception as exc:
+            print(f"[CampaignSendWorker] failed to start: {exc}")
+    else:
+        print("[CampaignSendWorker] disabled")
+
+    if settings.enable_daily_summary:
+        try:
+            start_daily_summary_scheduler()
+        except Exception as exc:
+            print(f"[DailySummary] failed to start: {exc}")
+    else:
+        print("[DailySummary] disabled")
 
 
 @app.on_event("shutdown")
@@ -114,3 +140,12 @@ async def _stop_notifier():
             campaign_sender.stop()
         finally:
             campaign_sender = None
+    print("[CampaignSendWorker] shutdown hook entered")
+    try:
+        campaigns.stop_campaign_send_worker()
+    except Exception as exc:
+        print(f"[CampaignSendWorker] failed to stop: {exc}")
+    try:
+        stop_daily_summary_scheduler()
+    except Exception as exc:
+        print(f"[DailySummary] failed to stop: {exc}")

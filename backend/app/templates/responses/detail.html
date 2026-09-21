@@ -24,6 +24,45 @@
         <p><span class="font-semibold">Lab ID:</span> {{ pii.get('lab_id') }}</p>
         {% endif %}
     </div>
+    {% if booking %}
+    <div class="bg-white p-4 rounded shadow border border-gray-200">
+        <h3 class="font-semibold mb-3">Booking Details</h3>
+        <dl class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-3 text-sm">
+            <div>
+                <dt class="text-gray-500">Booking Code</dt>
+                <dd class="font-medium">{{ booking.booking_code or '-' }}</dd>
+            </div>
+            <div>
+                <dt class="text-gray-500">Start Time</dt>
+                <dd class="font-medium">{{ booking.start_time or '-' }}</dd>
+            </div>
+            <div>
+                <dt class="text-gray-500">Age</dt>
+                <dd class="font-medium">{{ booking.age_years if booking.age_years is not none else '-' }}</dd>
+            </div>
+            <div>
+                <dt class="text-gray-500">Preferred Time Slot</dt>
+                <dd class="font-medium">{{ booking.preferred_time_slot or '-' }}</dd>
+            </div>
+            <div>
+                <dt class="text-gray-500">Panel Company</dt>
+                <dd class="font-medium">{{ booking.panel_company or '-' }}</dd>
+            </div>
+            <div>
+                <dt class="text-gray-500">Payment Mode</dt>
+                <dd class="font-medium">{{ booking.payment_mode or '-' }}</dd>
+            </div>
+            <div>
+                <dt class="text-gray-500">No. of Pricks</dt>
+                <dd class="font-medium">{{ booking.no_of_pricks or '-' }}</dd>
+            </div>
+            <div>
+                <dt class="text-gray-500">Assigned Phlebotomist</dt>
+                <dd class="font-medium">{{ booking.assigned_phlebotomist_name or '-' }}</dd>
+            </div>
+        </dl>
+    </div>
+    {% endif %}
     <div class="bg-white p-4 rounded shadow border border-gray-200 flex flex-wrap gap-2">
         {% if response.ticket_id %}
             <a href="/tickets/{{ response.ticket_id }}" class="px-4 py-2 rounded text-white" style="background: var(--primary,#054e5d);">View Ticket</a>

@@ -1,5 +1,10 @@
+from pathlib import Path
+
 from pydantic import Field
 from pydantic_settings import BaseSettings
+
+
+ROOT_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 
 
 class Settings(BaseSettings):
@@ -12,6 +17,16 @@ class Settings(BaseSettings):
     session_cookie_name: str = Field("arpra_session", env="SESSION_COOKIE_NAME")
     session_same_site: str = Field("lax", env="SESSION_SAME_SITE")
     session_https_only: bool = Field(False, env="SESSION_HTTPS_ONLY")
+    create_db_on_startup: bool = Field(False, env="CREATE_DB_ON_STARTUP")
+    enable_booking_sync: bool = Field(False, env="ENABLE_BOOKING_SYNC")
+    enable_booking_campaign_sender: bool = Field(False, env="ENABLE_BOOKING_CAMPAIGN_SENDER")
+    enable_campaign_send_worker: bool = Field(False, env="ENABLE_CAMPAIGN_SEND_WORKER")
+    enable_daily_summary: bool = Field(False, env="ENABLE_DAILY_SUMMARY")
+    daily_summary_api_url: str = Field(
+        "http://10.1.1.44:3004/api/messages/send", env="DAILY_SUMMARY_API_URL"
+    )
+    daily_summary_account_id: int = Field(1, env="DAILY_SUMMARY_ACCOUNT_ID")
+    daily_summary_recipients: str = Field("", env="DAILY_SUMMARY_RECIPIENTS")
     whatsapp_api_url: str = Field(
         "https://waapi.pepipost.com/api/v2/message/", env="WHATSAPP_API_URL"
     )
@@ -29,9 +44,15 @@ class Settings(BaseSettings):
     mysql_user: str = Field("", env="MYSQL_USER")
     mysql_password: str = Field("", env="MYSQL_PASSWORD")
     mysql_db: str = Field("", env="MYSQL_DB")
+    odt_mysql_host: str = Field("10.1.1.44", env="ODT_MYSQL_HOST")
+    odt_mysql_port: int = Field(3306, env="ODT_MYSQL_PORT")
+    odt_mysql_user: str = Field("root", env="ODT_MYSQL_USER")
+    odt_mysql_password: str = Field("", env="ODT_MYSQL_PASSWORD")
+    odt_mysql_db: str = Field("lead_management", env="ODT_MYSQL_DB")
+    odt_tickets_table: str = Field("tickets", env="ODT_TICKETS_TABLE")
 
     class Config:
-        env_file = ".env"
+        env_file = str(ROOT_ENV_FILE)
         env_file_encoding = "utf-8"
 
 

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from urllib.parse import quote_plus
 from zoneinfo import ZoneInfo
 
-import json
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy import create_engine, text
 
@@ -105,10 +105,20 @@ class BookingSync:
             """
             CREATE TABLE IF NOT EXISTS bookings (
                 bookingid BIGINT PRIMARY KEY,
+                booking_code VARCHAR(40) NULL,
                 customername VARCHAR(255),
                 dob DATE NULL,
+                age_years INT NULL,
                 slot VARCHAR(100),
+                preferred_time_slot VARCHAR(30) NULL,
                 mobile VARCHAR(50),
+                panel_company VARCHAR(150) NULL,
+                booking_status TINYINT NULL,
+                payment_mode VARCHAR(120) NULL,
+                no_of_pricks VARCHAR(20) NULL,
+                start_time VARCHAR(20) NULL,
+                assigned_phlebotomist_id BIGINT NULL,
+                assigned_phlebotomist_name VARCHAR(255) NULL,
                 isCampaingsend TINYINT(1) NOT NULL DEFAULT 0,
                 isResponseSubmitted TINYINT(1) NOT NULL DEFAULT 0,
                 enterdate DATETIME NULL
@@ -118,30 +128,31 @@ class BookingSync:
         try:
             with self.target_engine.begin() as conn:
                 conn.execute(ddl)
-                try:
-                    conn.execute(
-                        text(
-                            "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS isCampaingsend TINYINT(1) NOT NULL DEFAULT 0"
+                columns = {
+                    "booking_code": "VARCHAR(40) NULL",
+                    "age_years": "INT NULL",
+                    "preferred_time_slot": "VARCHAR(30) NULL",
+                    "panel_company": "VARCHAR(150) NULL",
+                    "booking_status": "TINYINT NULL",
+                    "payment_mode": "VARCHAR(120) NULL",
+                    "no_of_pricks": "VARCHAR(20) NULL",
+                    "start_time": "VARCHAR(20) NULL",
+                    "assigned_phlebotomist_id": "BIGINT NULL",
+                    "assigned_phlebotomist_name": "VARCHAR(255) NULL",
+                    "isCampaingsend": "TINYINT(1) NOT NULL DEFAULT 0",
+                    "isResponseSubmitted": "TINYINT(1) NOT NULL DEFAULT 0",
+                    "enterdate": "DATETIME NULL",
+                }
+                for column_name, column_type in columns.items():
+                    try:
+                        conn.execute(
+                            text(
+                                f"ALTER TABLE bookings ADD COLUMN IF NOT EXISTS "
+                                f"{column_name} {column_type}"
+                            )
                         )
-                    )
-                except Exception as exc:
-                    self._log(f"Column ensure skipped: {exc}")
-                try:
-                    conn.execute(
-                        text(
-                            "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS isResponseSubmitted TINYINT(1) NOT NULL DEFAULT 0"
-                        )
-                    )
-                except Exception as exc:
-                    self._log(f"Column ensure skipped: {exc}")
-                try:
-                    conn.execute(
-                        text(
-                            "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS enterdate DATETIME NULL"
-                        )
-                    )
-                except Exception as exc:
-                    self._log(f"Column ensure skipped: {exc}")
+                    except Exception as exc:
+                        self._log(f"Column ensure skipped for {column_name}: {exc}")
             self._log("Ensured target table bookings")
         except Exception as exc:
             self._log(f"Target table ensure failed: {exc}")
@@ -163,16 +174,28 @@ class BookingSync:
             """
             SELECT
                 bp.id AS bookingid,
+                b.booking_code AS booking_code,
                 pm.full_name AS customername,
                 pm.date_of_birth AS dob,
+                pm.age_years AS age_years,
                 b.preferred_time_slot AS slot,
+                b.preferred_time_slot AS preferred_time_slot,
                 pm.contact_mobile AS mobile,
+                pm.panel_company AS panel_company,
+                b.booking_status AS booking_status,
+                bp.payment_mode AS payment_mode,
+                bp.no_of_pricks AS no_of_pricks,
+                b.start_time AS start_time,
+                b.assigned_phlebotomist_id AS assigned_phlebotomist_id,
+                phlebotomist.name AS assigned_phlebotomist_name,
                 CAST(b.preferred_visit_date AS DATETIME) AS enterdate
             FROM hhome_collection_booking_patient bp
             JOIN hhome_collection_booking b
                 ON b.id = bp.booking_id
             JOIN hpatient_master pm
                 ON pm.id = bp.patient_id
+            LEFT JOIN users phlebotomist
+                ON phlebotomist.id = b.assigned_phlebotomist_id
             WHERE bp.booking_patient_status = 3
               AND b.preferred_visit_date = CURDATE()
             ORDER BY bp.id ASC
@@ -181,8 +204,34 @@ class BookingSync:
         )
         insert_stmt = text(
             """
-            INSERT IGNORE INTO bookings (bookingid, customername, dob, slot, mobile, enterdate)
-            VALUES (:bookingid, :customername, :dob, :slot, :mobile, :enterdate)
+            INSERT INTO bookings (
+                bookingid, booking_code, customername, dob, age_years, slot,
+                preferred_time_slot, mobile, panel_company, booking_status,
+                payment_mode, no_of_pricks, start_time, assigned_phlebotomist_id,
+                assigned_phlebotomist_name, enterdate
+            )
+            VALUES (
+                :bookingid, :booking_code, :customername, :dob, :age_years, :slot,
+                :preferred_time_slot, :mobile, :panel_company, :booking_status,
+                :payment_mode, :no_of_pricks, :start_time, :assigned_phlebotomist_id,
+                :assigned_phlebotomist_name, :enterdate
+            )
+            ON DUPLICATE KEY UPDATE
+                booking_code = VALUES(booking_code),
+                customername = VALUES(customername),
+                dob = VALUES(dob),
+                age_years = VALUES(age_years),
+                slot = VALUES(slot),
+                preferred_time_slot = VALUES(preferred_time_slot),
+                mobile = VALUES(mobile),
+                panel_company = VALUES(panel_company),
+                booking_status = VALUES(booking_status),
+                payment_mode = VALUES(payment_mode),
+                no_of_pricks = VALUES(no_of_pricks),
+                start_time = VALUES(start_time),
+                assigned_phlebotomist_id = VALUES(assigned_phlebotomist_id),
+                assigned_phlebotomist_name = VALUES(assigned_phlebotomist_name),
+                enterdate = VALUES(enterdate)
             """
         )
         try:

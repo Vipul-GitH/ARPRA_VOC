@@ -3,7 +3,7 @@ from typing import Dict, Optional
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import case, func
+from sqlalchemy import case, func, text
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -84,40 +84,73 @@ async def dashboard(
     prior_start = window_start - window_span
     prior_end = window_start
 
-    # Windowed aggregates
-    window_feedback = (
-        _regular_campaign_filter(db.query(func.count(FeedbackResponse.id)), FeedbackResponse.campaign_id)
-        .filter(FeedbackResponse.submission_time.between(window_start, window_end))
-        .scalar()
-        or 0
-    )
-    window_complaints = (
-        _regular_campaign_filter(db.query(func.count(FeedbackResponse.id)), FeedbackResponse.campaign_id)
-        .filter(FeedbackResponse.is_complaint.is_(True))
-        .filter(FeedbackResponse.submission_time.between(window_start, window_end))
-        .scalar()
-        or 0
-    )
+    # Feedback aggregates in one pass instead of separate count queries.
+    feedback_aggregate = _regular_campaign_filter(
+        db.query(
+            func.count(FeedbackResponse.id).label("total_feedback"),
+            func.sum(
+                case(
+                    (FeedbackResponse.submission_time.between(window_start, window_end), 1),
+                    else_=0,
+                )
+            ).label("window_feedback"),
+            func.sum(
+                case(
+                    (
+                        FeedbackResponse.submission_time.between(window_start, window_end)
+                        & FeedbackResponse.is_complaint.is_(True),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ).label("window_complaints"),
+            func.sum(
+                case(
+                    (FeedbackResponse.submission_time.between(prior_start, prior_end), 1),
+                    else_=0,
+                )
+            ).label("prior_feedback"),
+            func.sum(
+                case(
+                    (FeedbackResponse.needs_manual_review.is_(True), 1),
+                    else_=0,
+                )
+            ).label("manual_review_count"),
+        ),
+        FeedbackResponse.campaign_id,
+    ).one()
+    total_feedback = int(feedback_aggregate.total_feedback or 0)
+    window_feedback = int(feedback_aggregate.window_feedback or 0)
+    window_complaints = int(feedback_aggregate.window_complaints or 0)
+    prior_feedback = int(feedback_aggregate.prior_feedback or 0)
+    manual_review_count = int(feedback_aggregate.manual_review_count or 0)
     complaint_rate = round((window_complaints / window_feedback) * 100, 1) if window_feedback else 0
-
-    prior_feedback = (
-        _regular_campaign_filter(db.query(func.count(FeedbackResponse.id)), FeedbackResponse.campaign_id)
-        .filter(FeedbackResponse.submission_time.between(prior_start, prior_end))
-        .scalar()
-        or 0
-    )
     feedback_delta = window_feedback - prior_feedback
 
-    # Lifetime basics
-    total_feedback = (
-        _regular_campaign_filter(db.query(func.count(FeedbackResponse.id)), FeedbackResponse.campaign_id).scalar() or 0
-    )
+    # Ticket basics
     open_statuses = ["open", "in_progress"]
-    open_tickets = (
-        _regular_campaign_filter(db.query(FeedbackTicket), FeedbackTicket.campaign_id)
-        .filter(FeedbackTicket.status.in_(open_statuses))
-        .count()
-    )
+    ticket_aggregate = _regular_campaign_filter(
+        db.query(
+            func.sum(
+                case(
+                    (FeedbackTicket.status.in_(open_statuses), 1),
+                    else_=0,
+                )
+            ).label("open_tickets"),
+            func.avg(
+                case(
+                    (
+                        FeedbackTicket.status.in_(open_statuses) & FeedbackTicket.created_at.isnot(None),
+                        func.timestampdiff(text("DAY"), FeedbackTicket.created_at, func.utc_timestamp()),
+                    ),
+                    else_=None,
+                )
+            ).label("avg_ticket_age_days"),
+        ),
+        FeedbackTicket.campaign_id,
+    ).one()
+    open_tickets = int(ticket_aggregate.open_tickets or 0)
+    avg_ticket_age_days = round(float(ticket_aggregate.avg_ticket_age_days or 0), 1)
 
     # Ticket breakdowns
     tickets_by_status_rows = (
@@ -139,19 +172,6 @@ async def dashboard(
         .all()
     )
     tickets_by_severity = {row[0] or "unknown": row[1] for row in tickets_by_severity_rows} if tickets_by_severity_rows else {}
-
-    open_ticket_dates = (
-        _regular_campaign_filter(db.query(FeedbackTicket.created_at), FeedbackTicket.campaign_id)
-        .filter(FeedbackTicket.status.in_(open_statuses))
-        .all()
-    )
-    now = datetime.utcnow()
-    open_ticket_age_days = [
-        max((now - row[0]).days, 0)
-        for row in open_ticket_dates
-        if row[0]
-    ]
-    avg_ticket_age_days = round(sum(open_ticket_age_days) / len(open_ticket_age_days), 1) if open_ticket_age_days else 0
 
     # Campaign response rates & top movers
     response_stats = (
@@ -198,12 +218,6 @@ async def dashboard(
     )
 
     # Manual review queue & rewards
-    manual_review_count = (
-        _regular_campaign_filter(db.query(func.count(FeedbackResponse.id)), FeedbackResponse.campaign_id)
-        .filter(FeedbackResponse.needs_manual_review.is_(True))
-        .scalar()
-        or 0
-    )
     manual_review_items = (
         db.query(
             FeedbackResponse.submission_time,

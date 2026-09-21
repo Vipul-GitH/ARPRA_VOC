@@ -55,7 +55,13 @@ class BookingCampaignSender:
             self.scheduler.shutdown(wait=False)
             self._log("Scheduler stopped")
 
-    def _send_whatsapp(self, mobile: str, customername: str, bookingid: int | None) -> bool:
+    def _send_whatsapp(
+        self,
+        mobile: str,
+        customername: str,
+        bookingid: int | None,
+        http: requests.Session | None = None,
+    ) -> bool:
         target = self._normalize_mobile(mobile)
         if not target:
             self._log(f"Skip send: invalid mobile '{mobile}'")
@@ -92,7 +98,8 @@ class BookingCampaignSender:
             "Content-Type": "application/json",
         }
         try:
-            resp = requests.post(self.api_url, headers=headers, json=payload, timeout=10)
+            client = http or requests
+            resp = client.post(self.api_url, headers=headers, json=payload, timeout=10)
             ok = 200 <= resp.status_code < 300
             if ok:
                 self._log(f"Sent to {target}: HTTP {resp.status_code}")
@@ -121,20 +128,28 @@ class BookingCampaignSender:
             """
         )
         try:
-            with self.engine.begin() as conn:
+            with self.engine.connect() as conn:
                 rows = conn.execute(query).mappings().all()
-                if not rows:
-                    self._log("No pending bookings")
-                    return
-                self._log(f"Processing {len(rows)} pending bookings")
+            if not rows:
+                self._log("No pending bookings")
+                return
+
+            self._log(f"Processing {len(rows)} pending bookings")
+            sent_booking_ids = []
+            with requests.Session() as http:
                 for row in rows:
                     sent = self._send_whatsapp(
                         row.get("mobile"),
                         row.get("customername"),
                         row.get("bookingid"),
+                        http,
                     )
                     if sent:
-                        conn.execute(update, {"bid": row.get("bookingid")})
+                        sent_booking_ids.append({"bid": row.get("bookingid")})
+
+            if sent_booking_ids:
+                with self.engine.begin() as conn:
+                    conn.execute(update, sent_booking_ids)
         except Exception:
             import traceback
             self._log("Error while sending campaigns (will retry)")

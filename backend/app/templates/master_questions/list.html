@@ -66,10 +66,18 @@
     {% if masters %}
     <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
-            <span class="text-sm text-gray-500">Total: {{ masters|length }}</span>
+            <span class="text-sm text-gray-500">Showing {{ masters|length }} of {{ total }}</span>
             <button type="button" id="expand-all" class="px-3 py-1 text-xs rounded border border-gray-300 hover:border-teal-700">Expand all</button>
             <button type="button" id="collapse-all" class="px-3 py-1 text-xs rounded border border-gray-300 hover:border-teal-700">Collapse all</button>
         </div>
+        <form method="get" class="flex items-center gap-2">
+            <input type="hidden" name="page" value="1">
+            <select name="per_page" class="border rounded px-2 py-1 text-xs" onchange="this.form.submit()">
+                {% for size in [10, 25, 50, 100] %}
+                    <option value="{{ size }}" {% if per_page == size %}selected{% endif %}>{{ size }}/page</option>
+                {% endfor %}
+            </select>
+        </form>
     </div>
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4" style="max-height: 720px; overflow: auto; padding-right: 4px;">
         {% for m in masters %}
@@ -171,6 +179,17 @@
             </div>
         </div>
         {% endfor %}
+    </div>
+    <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
+        <div class="text-gray-600">Page {{ page }} of {{ total_pages }}</div>
+        <div class="flex gap-2">
+            {% if page > 1 %}
+                <a class="px-3 py-1 border rounded" href="{{ page_url(page - 1) }}">Prev</a>
+            {% endif %}
+            {% if page < total_pages %}
+                <a class="px-3 py-1 border rounded" href="{{ page_url(page + 1) }}">Next</a>
+            {% endif %}
+        </div>
     </div>
     {% else %}
     <div class="bg-white p-4 rounded shadow text-gray-500 text-sm">No master questions yet.</div>

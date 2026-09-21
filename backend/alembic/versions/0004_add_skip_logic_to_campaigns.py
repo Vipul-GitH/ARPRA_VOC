@@ -15,9 +15,25 @@ depends_on = None
 
 
 def upgrade():
-    op.add_column("campaigns", sa.Column("skip_logic", sa.JSON(), nullable=True))
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    existing_cols = (
+        {col["name"] for col in inspector.get_columns("campaigns")}
+        if inspector.has_table("campaigns")
+        else set()
+    )
+    if "skip_logic" not in existing_cols:
+        op.add_column("campaigns", sa.Column("skip_logic", sa.JSON(), nullable=True))
 
 
 def downgrade():
-    op.drop_column("campaigns", "skip_logic")
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    existing_cols = (
+        {col["name"] for col in inspector.get_columns("campaigns")}
+        if inspector.has_table("campaigns")
+        else set()
+    )
+    if "skip_logic" in existing_cols:
+        op.drop_column("campaigns", "skip_logic")
 

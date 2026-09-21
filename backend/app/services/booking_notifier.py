@@ -99,7 +99,12 @@ class BookingNotifier:
             return "91" + digits
         return digits
 
-    def _send_whatsapp(self, mobile: str, bookingid: Optional[str] = None) -> bool:
+    def _send_whatsapp(
+        self,
+        mobile: str,
+        bookingid: Optional[str] = None,
+        http: requests.Session | None = None,
+    ) -> bool:
         target = self._normalize_contact(mobile)
         if not target:
             self._log(f"Skip send: invalid mobile '{mobile}'")
@@ -119,7 +124,8 @@ class BookingNotifier:
             "message": f"HOME SAMPLE COLLECTION PATIENT FEEDBACK: {link}",
         }
         try:
-            resp = requests.post(self.whatsapp_api, json=payload, timeout=8)
+            client = http or requests
+            resp = client.post(self.whatsapp_api, json=payload, timeout=8)
             ok = 200 <= resp.status_code < 300
             if ok:
                 self._log(f"Sent to {target}: HTTP {resp.status_code}")
@@ -152,29 +158,35 @@ class BookingNotifier:
         )
         now = datetime.utcnow()
         try:
-            with self.engine.begin() as conn:
+            with self.engine.connect() as conn:
                 rows = conn.execute(query, {"last_id": self.last_bookingid}).fetchall()
-                if not rows:
-                    self._log("No pending bookings")
-                    return
-                self._log(f"Processing {len(rows)} pending bookings")
-                max_id = self.last_bookingid
+            if not rows:
+                self._log("No pending bookings")
+                return
+
+            self._log(f"Processing {len(rows)} pending bookings")
+            updates = []
+            max_id = self.last_bookingid
+            with requests.Session() as http:
                 for row in rows:
-                    sent = self._send_whatsapp(row.mobile, getattr(row, "bookingid", None))
-                    conn.execute(
-                        update,
+                    sent = self._send_whatsapp(row.mobile, getattr(row, "bookingid", None), http)
+                    updates.append(
                         {
                             "sent": 1 if sent else 0,
                             "ts": now,
                             "bid": row.bookingid,
-                        },
+                        }
                     )
                     self._log(f"Marked booking {row.bookingid} feedback_sent={1 if sent else 0}")
                     if row.bookingid and row.bookingid > max_id:
                         max_id = row.bookingid
-                self.last_bookingid = max_id
-                # Persist checkpoint so restart does not rescan billions of old rows
-                self._persist_checkpoint()
+
+            if updates:
+                with self.engine.begin() as conn:
+                    conn.execute(update, updates)
+            self.last_bookingid = max_id
+            # Persist checkpoint so restart does not rescan billions of old rows
+            self._persist_checkpoint()
         except Exception:
             # Silent fail; next tick will retry unsent rows.
             import traceback

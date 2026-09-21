@@ -449,3 +449,11 @@ FodyWeavers.xsd
 *.msm
 *.msp
 uploads/infra/
+
+# Local debug / handoff artifacts
+_patch_*.py
+_mysql_patch*.py
+webhook_doc.*
+webhook-test.json
+compare-webhook*.json
+arpra_voc*.sql

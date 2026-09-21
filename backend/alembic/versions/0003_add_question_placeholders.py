@@ -17,10 +17,26 @@ depends_on = None
 
 
 def upgrade():
-    op.add_column("master_questions", sa.Column("placeholder_en", sa.String(length=255), nullable=True))
-    op.add_column("campaign_questions", sa.Column("placeholder_en", sa.String(length=255), nullable=True))
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    for table_name in ("master_questions", "campaign_questions"):
+        existing_cols = (
+            {col["name"] for col in inspector.get_columns(table_name)}
+            if inspector.has_table(table_name)
+            else set()
+        )
+        if "placeholder_en" not in existing_cols:
+            op.add_column(table_name, sa.Column("placeholder_en", sa.String(length=255), nullable=True))
 
 
 def downgrade():
-    op.drop_column("campaign_questions", "placeholder_en")
-    op.drop_column("master_questions", "placeholder_en")
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    for table_name in ("campaign_questions", "master_questions"):
+        existing_cols = (
+            {col["name"] for col in inspector.get_columns(table_name)}
+            if inspector.has_table(table_name)
+            else set()
+        )
+        if "placeholder_en" in existing_cols:
+            op.drop_column(table_name, "placeholder_en")

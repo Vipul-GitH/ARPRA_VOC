@@ -16,6 +16,17 @@
     .card-actions { flex-wrap: wrap; gap: 8px !important; justify-content: flex-start; }
 }
 </style>
+<div class="flex flex-wrap items-center justify-between gap-2 mb-3 text-sm">
+    <div class="text-gray-600">Showing {{ campaigns|length }} of {{ total }}</div>
+    <form method="get" class="flex items-center gap-2">
+        <input type="hidden" name="page" value="1">
+        <select name="per_page" class="border rounded px-2 py-1 text-xs" onchange="this.form.submit()">
+            {% for size in [10, 20, 50, 100] %}
+                <option value="{{ size }}" {% if per_page == size %}selected{% endif %}>{{ size }}/page</option>
+            {% endfor %}
+        </select>
+    </form>
+</div>
 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 card-grid">
 {% set base_public_host = "https://labmate.bhasinpathlabs.com:4668" %}
 {% for c in campaigns %}
@@ -38,7 +49,7 @@
         <div class="flex flex-wrap gap-2 text-xs">
             <span class="px-2 py-1 rounded bg-indigo-50 text-indigo-700 font-semibold">Type: {{ c.campaign_type }}</span>
             <span class="px-2 py-1 rounded bg-sky-50 text-sky-700 font-semibold">Layout: {{ c.layout_type }}</span>
-            <span class="px-2 py-1 rounded bg-emerald-50 text-emerald-700 font-semibold">Questions: {{ c.questions|length }}</span>
+            <span class="px-2 py-1 rounded bg-emerald-50 text-emerald-700 font-semibold">Questions: {{ c.question_count or 0 }}</span>
         </div>
         <div class="bg-gray-50 border border-gray-100 rounded p-3">
             <p class="text-xs uppercase text-gray-500 font-semibold">Live link</p>
@@ -63,6 +74,17 @@
         </div>
     </div>
 {% endfor %}
+</div>
+<div class="flex flex-wrap items-center justify-between gap-2 mt-4 text-sm">
+    <div class="text-gray-600">Page {{ page }} of {{ total_pages }}</div>
+    <div class="flex gap-2">
+        {% if page > 1 %}
+            <a class="px-3 py-1 border rounded" href="{{ page_url(page - 1) }}">Prev</a>
+        {% endif %}
+        {% if page < total_pages %}
+            <a class="px-3 py-1 border rounded" href="{{ page_url(page + 1) }}">Next</a>
+        {% endif %}
+    </div>
 </div>
 
 <div id="qr-modal" class="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 hidden">

@@ -13,7 +13,11 @@
     {% if summary %}
         <div class="bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm px-3 py-2 rounded space-y-1">
             <p>Added {{ summary.count }} contacts to "{{ summary.list_name }}" for {{ summary.campaign }}.</p>
-            <p>WhatsApp send: {{ summary.send_success }} sent{% if summary.send_failed and summary.send_failed|length > 0 %}, {{ summary.send_failed|length }} failed{% endif %}.</p>
+            {% if summary.send_queued is defined %}
+                <p>WhatsApp send queued for {{ summary.send_queued }} contacts. Delivery will continue in the background.</p>
+            {% else %}
+                <p>WhatsApp send: {{ summary.send_success }} sent{% if summary.send_failed and summary.send_failed|length > 0 %}, {{ summary.send_failed|length }} failed{% endif %}.</p>
+            {% endif %}
             {% if summary.send_failed and summary.send_failed|length > 0 %}
                 <div class="text-rose-700 bg-rose-50 border border-rose-200 rounded px-2 py-1">
                     <p class="font-semibold text-xs">Failed targets:</p>
@@ -58,7 +62,7 @@
         Swal.fire({
             icon: 'success',
             title: 'Recipients added',
-            text: 'Total: {{ summary.count }} | Sent: {{ summary.send_success }}{% if summary.send_failed and summary.send_failed|length > 0 %} | Failed: {{ summary.send_failed|length }}{% endif %}',
+            text: 'Total: {{ summary.count }}{% if summary.send_queued is defined %} | Queued: {{ summary.send_queued }}{% else %} | Sent: {{ summary.send_success }}{% if summary.send_failed and summary.send_failed|length > 0 %} | Failed: {{ summary.send_failed|length }}{% endif %}{% endif %}',
             confirmButtonColor: '#054e5d'
         });
         {% elif error %}

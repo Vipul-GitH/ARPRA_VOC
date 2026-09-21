@@ -18,7 +18,7 @@
             type="text"
             name="q"
             value="{{ search }}"
-            placeholder="Search booking id, name, mobile"
+            placeholder="Search booking id/code, name, mobile"
             class="border rounded px-3 py-2 text-sm w-full md:w-72"
         >
         <input type="date" name="start_date" value="{{ start_date }}" class="border rounded px-3 py-2 text-sm">
@@ -54,12 +54,21 @@
             <p class="text-2xl font-semibold">{{ totals.responded_count or 0 }}</p>
         </div>
     </div>
-    <table class="w-full bg-white rounded shadow text-sm border border-gray-200">
+    <div class="overflow-x-auto border border-gray-200 rounded">
+    <table class="w-full min-w-max bg-white text-sm">
         <thead class="bg-gray-50">
             <tr>
                 <th class="text-left p-2">Booking ID</th>
+                <th class="text-left p-2">Booking Code</th>
                 <th class="text-left p-2">Name</th>
                 <th class="text-left p-2">Mobile</th>
+                <th class="text-left p-2">Age</th>
+                <th class="text-left p-2">Time Slot</th>
+                <th class="text-left p-2">Panel Company</th>
+                <th class="text-left p-2">Payment Mode</th>
+                <th class="text-left p-2">No. of Pricks</th>
+                <th class="text-left p-2">Start Time</th>
+                <th class="text-left p-2">Phlebotomist</th>
                 <th class="text-center p-2">Link Sent</th>
                 <th class="text-center p-2">Response</th>
             </tr>
@@ -68,8 +77,16 @@
         {% for b in bookings %}
             <tr class="border-t">
                 <td class="p-2">{{ b.bookingid }}</td>
+                <td class="p-2">{{ b.booking_code or '-' }}</td>
                 <td class="p-2">{{ b.customername }}</td>
                 <td class="p-2">{{ b.mobile }}</td>
+                <td class="p-2">{{ b.age_years if b.age_years is not none else '-' }}</td>
+                <td class="p-2">{{ b.preferred_time_slot or '-' }}</td>
+                <td class="p-2">{{ b.panel_company or '-' }}</td>
+                <td class="p-2">{{ b.payment_mode or '-' }}</td>
+                <td class="p-2">{{ b.no_of_pricks or '-' }}</td>
+                <td class="p-2">{{ b.start_time or '-' }}</td>
+                <td class="p-2">{{ b.assigned_phlebotomist_name or '-' }}</td>
                 <td class="p-2 text-center">
                     {% if b.isCampaingsend %}
                         <span class="px-2 py-1 rounded-full text-xs bg-emerald-100 text-emerald-700">Yes</span>
@@ -90,6 +107,7 @@
         {% endfor %}
         </tbody>
     </table>
+    </div>
     <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
         <div class="text-gray-600">
             Showing {{ bookings|length }} of {{ total }}

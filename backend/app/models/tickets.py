@@ -14,6 +14,7 @@ class FeedbackTicket(Base):
     response_id = Column(Integer, ForeignKey("feedback_responses.id"))
     campaign_id = Column(Integer, ForeignKey("campaigns.id"))
     created_at = Column(DateTime, default=datetime.utcnow)
+    closed_at = Column(DateTime)
     created_by = Column(Integer, ForeignKey("users.id"))
     assigned_to_user_id = Column(Integer, ForeignKey("users.id"))
     severity = Column(String(50), default="medium")

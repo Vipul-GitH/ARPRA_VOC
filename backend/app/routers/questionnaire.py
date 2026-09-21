@@ -5,7 +5,8 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, File
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import Session
+from sqlalchemy import func
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.database import get_db
 from app.models import (
@@ -35,7 +36,12 @@ EXP_LAB_OPTIONS = [
 
 def ensure_exp_lab_master_question(db: Session) -> MasterQuestion:
     """Ensure the master question exists globally with options."""
-    master = db.query(MasterQuestion).filter(MasterQuestion.code == EXP_LAB_CODE).first()
+    master = (
+        db.query(MasterQuestion)
+        .options(selectinload(MasterQuestion.options))
+        .filter(MasterQuestion.code == EXP_LAB_CODE)
+        .first()
+    )
     if not master:
         master = MasterQuestion(
             code=EXP_LAB_CODE,
@@ -109,6 +115,24 @@ def reindex_question_options(db: Session, question_id: int):
     db.flush()
 
 
+def next_question_order(db: Session, campaign_id: int) -> int:
+    max_order = (
+        db.query(func.max(CampaignQuestion.order_index))
+        .filter(CampaignQuestion.campaign_id == campaign_id)
+        .scalar()
+    )
+    return int(max_order or 0) + 1
+
+
+def next_option_order(db: Session, question_id: int) -> int:
+    max_order = (
+        db.query(func.max(CampaignQuestionOption.order_index))
+        .filter(CampaignQuestionOption.campaign_question_id == question_id)
+        .scalar()
+    )
+    return int(max_order or 0) + 1
+
+
 def clone_master_to_campaign_question(db: Session, master: MasterQuestion, campaign_id: int, is_required: bool = False, order_index: int = 0) -> CampaignQuestion:
     question = CampaignQuestion(
         campaign_id=campaign_id,
@@ -149,6 +173,7 @@ async def view_questionnaire(
         raise HTTPException(status_code=404, detail="Campaign not found")
     questions = (
         db.query(CampaignQuestion)
+        .options(selectinload(CampaignQuestion.options))
         .filter(CampaignQuestion.campaign_id == campaign_id)
         .order_by(CampaignQuestion.order_index)
         .all()
@@ -159,7 +184,12 @@ async def view_questionnaire(
     flow_rules = []
     flow_map = campaign.exp_flow_map or {}
     skip_logic = campaign.skip_logic or {}
-    master_questions = db.query(MasterQuestion).filter(MasterQuestion.is_active.is_(True)).order_by(MasterQuestion.code).all()
+    master_questions = (
+        db.query(MasterQuestion)
+        .filter(MasterQuestion.is_active.is_(True))
+        .order_by(MasterQuestion.code)
+        .all()
+    )
     db.commit()
     return templates.TemplateResponse(
         "campaigns/edit.html",
@@ -199,11 +229,7 @@ async def add_question(
     campaign = db.query(Campaign).get(campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
-    order_index = (
-        db.query(CampaignQuestion)
-        .filter(CampaignQuestion.campaign_id == campaign_id)
-        .count()
-    )
+    order_index = next_question_order(db, campaign_id)
     needs_options = question_type in ["mcq_single", "mcq_multi", "rating_1_5"]
     has_options = any(text.strip() for text in option_text_en)
     if needs_options and not has_options:
@@ -215,7 +241,7 @@ async def add_question(
         question_type=question_type,
         placeholder_en=placeholder_en.strip() if question_type == "text" and placeholder_en else None,
         is_required=is_required,
-        order_index=order_index + 1,
+        order_index=order_index,
     )
     db.add(question)
     db.flush()
@@ -255,14 +281,15 @@ async def add_master_question(
     campaign = db.query(Campaign).get(campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
-    master = db.query(MasterQuestion).get(master_question_id)
+    master = (
+        db.query(MasterQuestion)
+        .options(selectinload(MasterQuestion.options))
+        .filter(MasterQuestion.id == master_question_id)
+        .first()
+    )
     if not master:
         raise HTTPException(status_code=404, detail="Master question not found")
-    order_index = (
-        db.query(CampaignQuestion)
-        .filter(CampaignQuestion.campaign_id == campaign_id)
-        .count()
-    ) + 1
+    order_index = next_question_order(db, campaign_id)
     clone_master_to_campaign_question(db, master, campaign_id, is_required=is_required, order_index=order_index)
     reindex_campaign_questions(db, campaign_id)
     db.commit()
@@ -284,21 +311,17 @@ async def add_option(
     question = db.query(CampaignQuestion).get(question_id)
     if not question:
         raise HTTPException(status_code=404, detail="Question not found")
-    current_count = (
-        db.query(CampaignQuestionOption)
-        .filter(CampaignQuestionOption.campaign_question_id == question_id)
-        .count()
-    )
+    order_index = next_option_order(db, question_id)
     score_val = 0
 
-    val = option_value.strip() if option_value and option_value.strip() else str(current_count + 1)
+    val = option_value.strip() if option_value and option_value.strip() else str(order_index)
     option = CampaignQuestionOption(
         campaign_question_id=question_id,
         option_text_en=option_text_en,
         option_value=val,
         sentiment=sentiment,
         score_value=score_val,
-        order_index=current_count + 1,
+        order_index=order_index,
         follow_up_label=follow_up_label or None,
     )
     db.add(option)
@@ -371,14 +394,15 @@ async def copy_question(
     db: Session = Depends(get_db),
     user=Depends(require_role("admin")),
 ):
-    src = db.query(CampaignQuestion).get(question_id)
+    src = (
+        db.query(CampaignQuestion)
+        .options(selectinload(CampaignQuestion.options))
+        .filter(CampaignQuestion.id == question_id)
+        .first()
+    )
     if not src or src.campaign_id != campaign_id:
         raise HTTPException(status_code=404, detail="Question not found")
-    order_index = (
-        db.query(CampaignQuestion)
-        .filter(CampaignQuestion.campaign_id == campaign_id)
-        .count()
-    ) + 1
+    order_index = next_question_order(db, campaign_id)
     new_q = CampaignQuestion(
         campaign_id=campaign_id,
         master_question_id=src.master_question_id,
@@ -392,13 +416,7 @@ async def copy_question(
     )
     db.add(new_q)
     db.flush()
-    opts = (
-        db.query(CampaignQuestionOption)
-        .filter(CampaignQuestionOption.campaign_question_id == question_id)
-        .order_by(CampaignQuestionOption.order_index, CampaignQuestionOption.id)
-        .all()
-    )
-    for idx, opt in enumerate(opts, start=1):
+    for idx, opt in enumerate(src.options, start=1):
         db.add(
             CampaignQuestionOption(
                 campaign_question_id=new_q.id,
@@ -427,7 +445,12 @@ async def sync_question_from_master(
     question = db.query(CampaignQuestion).get(question_id)
     if not question or question.campaign_id != campaign_id or not question.master_question_id:
         raise HTTPException(status_code=404, detail="Linked master not found for this question")
-    master = db.query(MasterQuestion).get(question.master_question_id)
+    master = (
+        db.query(MasterQuestion)
+        .options(selectinload(MasterQuestion.options))
+        .filter(MasterQuestion.id == question.master_question_id)
+        .first()
+    )
     if not master:
         raise HTTPException(status_code=404, detail="Master question not found")
 
@@ -476,7 +499,6 @@ async def delete_question(
             new_map[key] = filtered
         campaign.exp_flow_map = new_map
     db.delete(question)
-    db.commit()
     reindex_campaign_questions(db, campaign_id)
     db.commit()
     return RedirectResponse(url=f"/questionnaire/{campaign_id}", status_code=302)
@@ -494,7 +516,12 @@ async def update_option(
     db: Session = Depends(get_db),
     user=Depends(require_role("admin")),
 ):
-    option = db.query(CampaignQuestionOption).get(option_id)
+    option = (
+        db.query(CampaignQuestionOption)
+        .options(joinedload(CampaignQuestionOption.question))
+        .filter(CampaignQuestionOption.id == option_id)
+        .first()
+    )
     if not option or option.question.campaign_id != campaign_id:
         raise HTTPException(status_code=404, detail="Option not found")
     option.option_text_en = option_text_en
@@ -515,7 +542,12 @@ async def move_option(
     db: Session = Depends(get_db),
     user=Depends(require_role("admin")),
 ):
-    option = db.query(CampaignQuestionOption).get(option_id)
+    option = (
+        db.query(CampaignQuestionOption)
+        .options(joinedload(CampaignQuestionOption.question))
+        .filter(CampaignQuestionOption.id == option_id)
+        .first()
+    )
     if not option or option.question.campaign_id != campaign_id:
         raise HTTPException(status_code=404, detail="Option not found")
     question_id = option.campaign_question_id
@@ -546,12 +578,16 @@ async def delete_option(
     db: Session = Depends(get_db),
     user=Depends(require_role("admin")),
 ):
-    option = db.query(CampaignQuestionOption).get(option_id)
+    option = (
+        db.query(CampaignQuestionOption)
+        .options(joinedload(CampaignQuestionOption.question))
+        .filter(CampaignQuestionOption.id == option_id)
+        .first()
+    )
     if not option or option.question.campaign_id != campaign_id:
         raise HTTPException(status_code=404, detail="Option not found")
     question_id = option.campaign_question_id
     db.delete(option)
-    db.commit()
     reindex_question_options(db, question_id)
     db.commit()
     return RedirectResponse(url=f"/questionnaire/{campaign_id}", status_code=302)
@@ -611,6 +647,7 @@ async def update_flow_mapping(
     flow_map: Dict[str, List[int]] = {}
     first_question = (
         db.query(CampaignQuestion)
+        .options(selectinload(CampaignQuestion.options))
         .filter(CampaignQuestion.campaign_id == campaign_id)
         .order_by(CampaignQuestion.order_index, CampaignQuestion.id)
         .first()

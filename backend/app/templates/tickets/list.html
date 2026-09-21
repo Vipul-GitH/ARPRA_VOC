@@ -24,6 +24,11 @@
                 <option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ s }}</option>
             {% endfor %}
         </select>
+        <select name="per_page" class="border rounded px-3 py-2 text-sm">
+            {% for n in [25, 50, 100, 200] %}
+                <option value="{{ n }}" {% if per_page == n %}selected{% endif %}>{{ n }}/page</option>
+            {% endfor %}
+        </select>
         <button type="submit" class="btn-primary text-sm px-4 py-2">Filter</button>
         <a href="/tickets/?scope={{ active_scope }}" class="px-4 py-2 text-sm rounded border border-gray-300 bg-white text-gray-800">Clear filter</a>
     </form>
@@ -55,5 +60,23 @@
         {% endfor %}
         </tbody>
     </table>
+    <div class="flex flex-wrap items-center justify-between gap-3 text-sm">
+        <div class="text-gray-600">
+            Showing {{ tickets|length }} of {{ total }} tickets
+        </div>
+        <div class="flex items-center gap-2">
+            {% if page > 1 %}
+                <a class="px-3 py-2 rounded border border-gray-300 bg-white text-gray-800" href="/tickets/?{{ pagination_query }}&page={{ page - 1 }}">Previous</a>
+            {% else %}
+                <span class="px-3 py-2 rounded border border-gray-200 bg-gray-50 text-gray-400">Previous</span>
+            {% endif %}
+            <span class="text-gray-700">Page {{ page }} / {{ total_pages }}</span>
+            {% if page < total_pages %}
+                <a class="px-3 py-2 rounded border border-gray-300 bg-white text-gray-800" href="/tickets/?{{ pagination_query }}&page={{ page + 1 }}">Next</a>
+            {% else %}
+                <span class="px-3 py-2 rounded border border-gray-200 bg-gray-50 text-gray-400">Next</span>
+            {% endif %}
+        </div>
+    </div>
 </div>
 {% endblock %}

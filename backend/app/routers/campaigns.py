@@ -1,5 +1,7 @@
+import math
 from datetime import datetime
 from typing import List
+from urllib.parse import urlencode
 
 import io
 import csv
@@ -10,15 +12,17 @@ from uuid import uuid4
 
 import qrcode
 import requests
+from apscheduler.schedulers.background import BackgroundScheduler
 from urllib.parse import quote
 import base64
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, File
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Query, Request, UploadFile, File
 from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import Session
+from sqlalchemy import func
+from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy.exc import IntegrityError
 
-from app.database import get_db
+from app.database import SessionLocal, get_db
 from app.models import (
     Campaign,
     CampaignQuestion,
@@ -62,13 +66,50 @@ PUBLIC_HOST = "https://labmate.bhasinpathlabs.com:4668"
 WHATSAPP_SEND_API = "http://10.1.1.44:3004/api/messages/send"
 WHATSAPP_ACCOUNT_ID = 1
 WHATSAPP_MEDIA_URL = "https://labmate.bhasinpathlabs.com:4668/static/img/santa.gif"
+campaign_send_scheduler: BackgroundScheduler | None = None
 
 
 @router.get("/")
-async def list_campaigns(request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
-    campaigns = db.query(Campaign).all()
+async def list_campaigns(
+    request: Request,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    total = db.query(func.count(Campaign.id)).scalar() or 0
+    total_pages = max(math.ceil(total / per_page), 1)
+    page = min(page, total_pages)
+    offset = (page - 1) * per_page
+    campaign_rows = (
+        db.query(Campaign, func.count(CampaignQuestion.id).label("question_count"))
+        .outerjoin(CampaignQuestion, CampaignQuestion.campaign_id == Campaign.id)
+        .group_by(Campaign.id)
+        .order_by(Campaign.created_at.desc(), Campaign.id.desc())
+        .offset(offset)
+        .limit(per_page)
+        .all()
+    )
+    campaigns = []
+    for campaign, question_count in campaign_rows:
+        campaign.question_count = int(question_count or 0)
+        campaigns.append(campaign)
+
+    def page_url(target_page: int) -> str:
+        return "?" + urlencode({"page": target_page, "per_page": per_page})
+
     return templates.TemplateResponse(
-        "campaigns/list.html", {"request": request, "campaigns": campaigns, "user": user}
+        "campaigns/list.html",
+        {
+            "request": request,
+            "campaigns": campaigns,
+            "user": user,
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+            "total_pages": total_pages,
+            "page_url": page_url,
+        },
     )
 
 
@@ -89,6 +130,7 @@ async def export_campaign_flow_pdf(
         raise HTTPException(status_code=404, detail="Campaign not found")
     questions = (
         db.query(CampaignQuestion)
+        .options(selectinload(CampaignQuestion.options))
         .filter(CampaignQuestion.campaign_id == campaign.id)
         .order_by(CampaignQuestion.order_index, CampaignQuestion.id)
         .all()
@@ -170,6 +212,12 @@ async def export_campaign_flow_pdf(
         "neutral": colors.HexColor("#facc15"),
         "negative": colors.HexColor("#ef4444"),
     }
+
+    def question_label(question: CampaignQuestion | None) -> str:
+        if not question:
+            return ""
+        return question.question_text_en or question.question_text_hi or ""
+
     add_line(f"Campaign: {campaign.name}", size=14, leading=18)
     add_line(f"Code: {campaign.code or ''}", size=12, leading=16)
     add_line(f"Total Questions: {len(questions)}", size=10, leading=14)
@@ -193,7 +241,7 @@ async def export_campaign_flow_pdf(
     add_line("Questions", size=13, leading=17)
     add_line("----------------------------------------", size=9, leading=12)
     for q in questions:
-        q_title = q.question_text_en or q.question_text or ""
+        q_title = question_label(q)
         add_line(f"Q{q.order_index or q.id}: {q_title}", size=11, leading=15)
         if q.options:
             for opt in sorted(q.options, key=lambda o: (o.order_index or 0, o.id)):
@@ -234,7 +282,7 @@ async def export_campaign_flow_pdf(
 
         add_line("Flow mapping (driven by Q1)", size=12, leading=16)
         add_line("----------------------------------------", size=9, leading=12)
-        add_line(f"Q1: {first_question.question_text_en or first_question.question_text or ''}", size=10, leading=14)
+        add_line(f"Q1: {question_label(first_question)}", size=10, leading=14)
         for key, targets in flow_map.items():
             opt = opt_lookup.get(key)
             label = opt.option_text_en or opt.option_text_hi or str(opt.option_value) if opt else str(key)
@@ -242,7 +290,7 @@ async def export_campaign_flow_pdf(
             for qid in targets or []:
                 q_obj = q_lookup.get(qid)
                 if q_obj:
-                    target_lines.append(f"Q{q_obj.order_index or q_obj.id}: {q_obj.question_text_en or q_obj.question_text or ''}")
+                    target_lines.append(f"Q{q_obj.order_index or q_obj.id}: {question_label(q_obj)}")
             add_line(f"If Q1 = {label} ->", size=11, leading=15)
             if target_lines:
                 for tl in target_lines:
@@ -377,6 +425,198 @@ def _encode_image_b64(path: Path) -> tuple[str, str]:
     return mime, b64
 
 
+def _default_media_data() -> dict | None:
+    try:
+        default_path = Path("app/static/img/santa.gif")
+        if default_path.exists():
+            mime, b64 = _encode_image_b64(default_path)
+            return {"type": "image", "mime": mime, "data": b64, "filename": "santa.gif"}
+    except Exception:
+        return None
+    return None
+
+
+def _campaign_message(campaign: Campaign, name: str, link: str) -> str:
+    if (campaign.code or "").lower() == "code_5":
+        return (
+            f"Hello {name},\n"
+            "At Dr Bhasin's Lab, accuracy and patient safety depend on people, not machines alone.\n"
+            "This feedback is not for fault-finding. It is to understand your experience, improve systems, and support you better.\n"
+            "Your honest responses will help us work better together and serve patients better.\n"
+            f"Share Your Experience here: {link}\n\n"
+            f"प्रिय {name} ,\n"
+            "डॉ. भसीन लैब में सटीकता और मरीजों की सुरक्षा केवल मशीनों से नहीं, बल्कि लोगों से सुनिश्चित होती है।\n"
+            "यह फीडबैक किसी की गलती निकालने के लिए नहीं है। इसका उद्देश्य आपके अनुभव को समझना, कार्यप्रणाली सुधारना और आपको बेहतर सहयोग देना है।\n"
+            "आपकी ईमानदार राय हमें बेहतर काम करने और मरीजों को बेहतर सेवा देने में मदद करेगी।\n"
+            f"अपना अनुभव यहां साझा करें: {link}\n\n"
+            "With Care,\nDr Vishu Bhasin & Dr Vipul Bhasin\nDr Bhasin's Lab"
+        )
+    if (campaign.code or "").lower() == "code_6":
+        return (
+            "Tomorrow is our Director Dr. Vipul Bhasin's birthday. "
+            "We have shared a small feedback form where you can wish Sir. "
+            "Please fill out the form and send your good wishes to Sir. Thank you.\n\n"
+            "कल हमारे निदेशक डॉ. विपुल भसीन का जन्मदिन है। "
+            "इसके लिए हमने एक छोटा फीडबैक फॉर्म साझा किया है, जिसमें आप सर को शुभकामनाएं दे सकते हैं। "
+            "कृपया फॉर्म भरें और सर को अपनी शुभकामनाएं दें। धन्यवाद।\n\n"
+            f"{link}"
+        )
+    return f"Hi {name}, please share your feedback: {link}"
+
+
+def _log_campaign_send(campaign: Campaign, total: int, success_count: int, details: List[dict], list_name: str):
+    try:
+        logs_dir = Path("logs")
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        log_path = logs_dir / "campaign_send.log"
+        ts = datetime.utcnow().isoformat()
+        failed_count = sum(1 for item in details if item.get("status") == "failed")
+        with log_path.open("a", encoding="utf-8") as fh:
+            fh.write(
+                f"{ts} | campaign={campaign.code or campaign.id} | name={campaign.name} | total={total} | "
+                f"success={success_count} | failed={failed_count} | list={list_name}\n"
+            )
+            for item in details:
+                status = item.get("status")
+                tgt = item.get("target")
+                nm = item.get("name")
+                err = item.get("error", "")
+                fh.write(f"  - status={status} target={tgt} name={nm}")
+                if err:
+                    fh.write(f" error={err}")
+                fh.write("\n")
+    except Exception as exc:
+        print(f"[CampaignSend] log write failed: {exc}")
+
+
+def _send_campaign_recipient_batch(recipient_ids: list[int], list_name: str):
+    db = SessionLocal()
+    try:
+        recipients = (
+            db.query(CampaignRecipient)
+            .options(joinedload(CampaignRecipient.campaign))
+            .filter(CampaignRecipient.id.in_(recipient_ids))
+            .order_by(CampaignRecipient.id)
+            .all()
+        )
+        if not recipients:
+            return
+        campaign = recipients[0].campaign
+        if not campaign:
+            return
+
+        media_data = _default_media_data()
+        success_count = 0
+        details: List[dict] = []
+        for recipient in recipients:
+            recipient.status = "sending"
+        db.commit()
+
+        with requests.Session() as http:
+            for recipient in recipients:
+                entry = recipient.pii_data_json or {}
+                name = entry.get("name") or "Friend"
+                contact = entry.get("contact") or ""
+                target = _normalize_contact(contact)
+                if not target:
+                    recipient.status = "failed"
+                    details.append({"target": contact, "name": name, "status": "failed", "error": "invalid contact"})
+                    continue
+
+                mobile_param = quote(target[-10:]) if len(target) >= 10 else quote(target)
+                name_param = quote(name)
+                token = recipient.personalized_link_token or str(campaign.code if campaign.code else campaign.id)
+                link = f"{PUBLIC_HOST}/feedback/{token}?name={name_param}&mobile={mobile_param}&country=91"
+                payload = {
+                    "accountId": WHATSAPP_ACCOUNT_ID,
+                    "target": target,
+                    "message": _campaign_message(campaign, name, link),
+                }
+                if WHATSAPP_MEDIA_URL:
+                    payload["mediaUrl"] = WHATSAPP_MEDIA_URL
+                if media_data:
+                    payload.setdefault("attachments", []).append(media_data)
+
+                try:
+                    resp = http.post(WHATSAPP_SEND_API, json=payload, timeout=8)
+                    if 200 <= resp.status_code < 300:
+                        recipient.status = "complete"
+                        success_count += 1
+                        details.append({"target": contact, "name": name, "status": "success"})
+                    else:
+                        recipient.status = "failed"
+                        details.append({
+                            "target": contact,
+                            "name": name,
+                            "status": "failed",
+                            "error": f"HTTP {resp.status_code}",
+                            "body": resp.text[:200] if resp.text else "",
+                        })
+                except Exception as exc:
+                    recipient.status = "failed"
+                    details.append({"target": contact, "name": name, "status": "failed", "error": str(exc)})
+
+        db.commit()
+        _log_campaign_send(campaign, len(recipients), success_count, details, list_name)
+    except Exception:
+        import traceback
+        print("[CampaignSend] background send failed")
+        print(traceback.format_exc())
+    finally:
+        db.close()
+
+
+def process_queued_campaign_recipients(limit: int = 100):
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(CampaignRecipient.id, CampaignRecipientList.name)
+            .join(CampaignRecipientList, CampaignRecipientList.id == CampaignRecipient.recipient_list_id)
+            .filter(CampaignRecipient.status.in_(["queued", "sending"]))
+            .order_by(CampaignRecipient.id)
+            .limit(limit)
+            .all()
+        )
+        if not rows:
+            print("[CampaignSendWorker] no queued recipients")
+            return
+
+        grouped: dict[str, list[int]] = {}
+        for recipient_id, list_name in rows:
+            grouped.setdefault(list_name or "Queued recipients", []).append(recipient_id)
+    finally:
+        db.close()
+
+    print(f"[CampaignSendWorker] processing {len(rows)} queued recipients")
+    for list_name, recipient_ids in grouped.items():
+        _send_campaign_recipient_batch(recipient_ids, list_name)
+
+
+def start_campaign_send_worker(interval_seconds: int = 60):
+    global campaign_send_scheduler
+    if campaign_send_scheduler and campaign_send_scheduler.running:
+        return
+    campaign_send_scheduler = BackgroundScheduler(timezone="UTC")
+    campaign_send_scheduler.add_job(
+        process_queued_campaign_recipients,
+        "interval",
+        seconds=interval_seconds,
+        max_instances=1,
+        coalesce=True,
+    )
+    campaign_send_scheduler.start()
+    print("[CampaignSendWorker] scheduler started")
+    process_queued_campaign_recipients()
+
+
+def stop_campaign_send_worker():
+    global campaign_send_scheduler
+    if campaign_send_scheduler and campaign_send_scheduler.running:
+        campaign_send_scheduler.shutdown(wait=False)
+        print("[CampaignSendWorker] scheduler stopped")
+    campaign_send_scheduler = None
+
+
 @router.get("/send")
 async def send_campaign(
     request: Request,
@@ -401,6 +641,7 @@ async def send_campaign(
 @router.post("/send")
 async def upload_recipients(
     request: Request,
+    background_tasks: BackgroundTasks,
     campaign_id: int = Form(...),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -424,130 +665,30 @@ async def upload_recipients(
         db.add(recipient_list)
         db.flush()
 
-        recipient_rows: List[dict] = []
+        recipients_to_create: list[CampaignRecipient] = []
         for entry in contacts:
             recipient = CampaignRecipient(
                 recipient_list_id=recipient_list.id,
                 campaign_id=campaign_id,
                 pii_data_json={"name": entry["name"], "contact": entry["contact"]},
                 personalized_link_token=uuid4().hex,
-                status="pending",
+                status="queued",
             )
-            db.add(recipient)
-            recipient_rows.append({"entry": entry, "recipient": recipient})
+            recipients_to_create.append(recipient)
+        db.add_all(recipients_to_create)
+        db.flush()
+        recipient_ids = [recipient.id for recipient in recipients_to_create]
         db.commit()
-
-        # Send WhatsApp messages
-        media_url = WHATSAPP_MEDIA_URL
-        media_data = None
-        try:
-            default_path = Path("app/static/img/santa.gif")
-            if default_path.exists():
-                mime, b64 = _encode_image_b64(default_path)
-                media_data = {"type": "image", "mime": mime, "data": b64, "filename": "santa.gif"}
-        except Exception:
-            media_data = None
-
-        success_count = 0
-        failed = []
-        details: List[dict] = []
-        for row in recipient_rows:
-            entry = row["entry"]
-            recipient = row["recipient"]
-            target = _normalize_contact(entry["contact"])
-            if not target:
-                recipient.status = "failed"
-                failed.append({"target": entry["contact"], "error": "invalid contact"})
-                details.append({"target": entry["contact"], "name": entry["name"], "status": "failed", "error": "invalid contact"})
-                continue
-            mobile_param = quote(target[-10:]) if len(target) >= 10 else quote(target)
-            name_param = quote(entry["name"])
-            token = recipient.personalized_link_token or str(campaign.code if campaign.code else campaign.id)
-            link = f"{PUBLIC_HOST}/feedback/{token}?name={name_param}&mobile={mobile_param}&country=91"
-            # Custom message for campaign code_5
-            if (campaign.code or "").lower() == "code_5":
-                nm = entry["name"]
-                msg = (
-                    f"Hello {nm},\n"
-                    "At Dr Bhasin’s Lab, accuracy and patient safety depend on people, not machines alone.\n"
-                    "This feedback is not for fault-finding. It is to understand your experience, improve systems, and support you better.\n"
-                    "Your honest responses will help us work better together and serve patients better.\n"
-                    f"Share Your Experience here: {link}\n\n"
-                    f"प्रिय {nm} ,\n"
-                    "डॉ. भसीन लैब में सटीकता और मरीजों की सुरक्षा केवल मशीनों से नहीं, बल्कि लोगों से सुनिश्चित होती है।\n"
-                    "यह फीडबैक किसी की गलती निकालने के लिए नहीं है। इसका उद्देश्य आपके अनुभव को समझना, कार्यप्रणाली सुधारना और आपको बेहतर सहयोग देना है।\n"
-                    "आपकी ईमानदार राय हमें बेहतर काम करने और मरीजों को बेहतर सेवा देने में मदद करेगी।\n"
-                    f"अपना अनुभव यहां साझा करें: {link}\n\n"
-                    "With Care,\nDr Vishu Bhasin & Dr Vipul Bhasin\nDr Bhasin's Lab"
-                )
-            elif (campaign.code or "").lower() == "code_6":
-                msg = (
-                    "Tomorrow is our Director Dr. Vipul Bhasin’s birthday. "
-                    "We have shared a small feedback form where you can wish Sir. "
-                    "Please fill out the form and send your good wishes to Sir. Thank you.\n\n"
-                    "कल हमारे निदेशक डॉ. विपुल भसीन का जन्मदिन है। "
-                    "इसके लिए हमने एक छोटा फीडबैक फॉर्म साझा किया है, जिसमें आप सर को शुभकामनाएं दे सकते हैं। "
-                    "कृपया फॉर्म भरें और सर को अपनी शुभकामनाएं दें। धन्यवाद।\n\n"
-                    f"{link}"
-                )
-            else:
-                msg = f"Hi {entry['name']}, please share your feedback: {link}"
-
-            payload = {
-                "accountId": WHATSAPP_ACCOUNT_ID,
-                "target": target,
-                "message": msg,
-            }
-            if media_url:
-                payload["mediaUrl"] = media_url
-            if media_data:
-                payload.setdefault("attachments", []).append(media_data)
-            try:
-                resp = requests.post(WHATSAPP_SEND_API, json=payload, timeout=8)
-                if 200 <= resp.status_code < 300:
-                    recipient.status = "complete"
-                    success_count += 1
-                    details.append({"target": entry["contact"], "name": entry["name"], "status": "success"})
-                else:
-                    recipient.status = "failed"
-                    failed.append({"target": entry["contact"], "error": f"HTTP {resp.status_code}"})
-                    details.append({"target": entry["contact"], "name": entry["name"], "status": "failed", "error": f"HTTP {resp.status_code}", "body": resp.text[:200] if resp.text else ""})
-            except Exception as exc:
-                recipient.status = "failed"
-                failed.append({"target": entry["contact"], "error": str(exc)})
-                details.append({"target": entry["contact"], "name": entry["name"], "status": "failed", "error": str(exc)})
-
-        db.commit()
+        background_tasks.add_task(_send_campaign_recipient_batch, recipient_ids, list_name)
 
         summary = {
             "count": len(contacts),
             "campaign": campaign.name,
             "list_name": list_name,
-            "send_success": success_count,
-            "send_failed": failed,
+            "send_queued": len(recipient_ids),
+            "send_success": 0,
+            "send_failed": [],
         }
-        # Log send summary to file
-        try:
-            logs_dir = Path("logs")
-            logs_dir.mkdir(parents=True, exist_ok=True)
-            log_path = logs_dir / "campaign_send.log"
-            ts = datetime.utcnow().isoformat()
-            with log_path.open("a", encoding="utf-8") as fh:
-                fh.write(
-                    f"{ts} | campaign={campaign.code or campaign.id} | name={campaign.name} | total={len(contacts)} | "
-                    f"success={success_count} | failed={len(failed)} | list={list_name}\n"
-                )
-                for item in details:
-                    status = item.get("status")
-                    tgt = item.get("target")
-                    nm = item.get("name")
-                    err = item.get("error", "")
-                    fh.write(f"  - status={status} target={tgt} name={nm}")
-                    if err:
-                        fh.write(f" error={err}")
-                    fh.write("\n")
-        except Exception as e:
-            print(f"[CampaignSend] log write failed: {e}")
         return templates.TemplateResponse(
             "campaigns/send.html",
             {
@@ -659,6 +800,7 @@ async def edit_campaign(
     channels = db.query(CollectionChannel).all()
     questions = (
         db.query(CampaignQuestion)
+        .options(selectinload(CampaignQuestion.options))
         .filter(CampaignQuestion.campaign_id == campaign_id)
         .order_by(CampaignQuestion.order_index)
         .all()
@@ -755,6 +897,7 @@ async def copy_campaign(
     # copy questions and options
     questions = (
         db.query(CampaignQuestion)
+        .options(selectinload(CampaignQuestion.options))
         .filter(CampaignQuestion.campaign_id == campaign_id)
         .order_by(CampaignQuestion.order_index, CampaignQuestion.id)
         .all()
@@ -777,13 +920,7 @@ async def copy_campaign(
         db.flush()
         id_map[q.id] = new_q.id
 
-        options = (
-            db.query(CampaignQuestionOption)
-            .filter(CampaignQuestionOption.campaign_question_id == q.id)
-            .order_by(CampaignQuestionOption.order_index, CampaignQuestionOption.id)
-            .all()
-        )
-        for opt in options:
+        for opt in q.options:
             db.add(
                 CampaignQuestionOption(
                     campaign_question_id=new_q.id,

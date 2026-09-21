@@ -1,16 +1,17 @@
 import json
+from functools import lru_cache
 from typing import Optional
 from urllib.parse import quote_plus
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import Session
+from sqlalchemy import create_engine, or_, text
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.config import get_settings
 from app.database import get_db
-from app.models import Campaign, CampaignQuestion, CampaignRecipient, FeedbackAnswer, FeedbackResponse, QuestionFlowRule
+from app.models import Campaign, CampaignQuestion, CampaignRecipient, FeedbackAnswer, FeedbackResponse
 from app.services.feedback import compute_scores, create_ticket_if_needed
 
 # Default per-campaign skip-flow rules (fallback if skip_logic not set on campaign)
@@ -23,17 +24,25 @@ templates = Jinja2Templates(directory="app/templates")
 
 
 def load_campaign_by_token(db: Session, token: str) -> tuple[Campaign, Optional[CampaignRecipient]]:
-    recipient = db.query(CampaignRecipient).filter(CampaignRecipient.personalized_link_token == token).first()
+    recipient = (
+        db.query(CampaignRecipient)
+        .options(joinedload(CampaignRecipient.campaign))
+        .filter(CampaignRecipient.personalized_link_token == token)
+        .first()
+    )
     if recipient:
         campaign = recipient.campaign
         return campaign, recipient
-    campaign_query = db.query(Campaign).filter(Campaign.code == token)
+    campaign_query = db.query(Campaign)
     if token.isdigit():
-        campaign_query = campaign_query.union(db.query(Campaign).filter(Campaign.id == int(token)))
+        campaign_query = campaign_query.filter(or_(Campaign.code == token, Campaign.id == int(token)))
+    else:
+        campaign_query = campaign_query.filter(Campaign.code == token)
     campaign = campaign_query.first()
     return campaign, None
 
 
+@lru_cache(maxsize=1)
 def _phlebo_engine():
     settings = get_settings()
     if not all([settings.mysql_host, settings.mysql_port, settings.mysql_user, settings.mysql_db]):
@@ -44,6 +53,11 @@ def _phlebo_engine():
         f"@{settings.mysql_host}:{settings.mysql_port}/{settings.mysql_db}"
     )
     return create_engine(db_url, pool_pre_ping=True)
+
+
+def _campaign_skip_rule(campaign: Campaign) -> dict | None:
+    code = (campaign.code or "").strip().upper()
+    return campaign.skip_logic or SKIP_FLOW_RULES.get(code)
 
 
 def _prefill_from_booking(request: Request) -> dict:
@@ -113,7 +127,21 @@ def _prefill_from_booking(request: Request) -> dict:
     return prefill
 
 
-def _mark_booking_responses_submitted(db: Session, mobile_number: str):
+def _mark_booking_responses_submitted(db: Session, mobile_number: str, lab_id: str | None = None):
+    if lab_id:
+        result = db.execute(
+            text(
+                """
+                UPDATE bookings
+                SET isResponseSubmitted = 1
+                WHERE bookingid = :bookingid
+                """
+            ),
+            {"bookingid": lab_id},
+        )
+        if result.rowcount:
+            return
+
     digits = "".join(ch for ch in str(mobile_number or "") if ch.isdigit())
     if len(digits) < 10:
         return
@@ -137,6 +165,7 @@ async def view_form(token: str, request: Request, db: Session = Depends(get_db))
         raise HTTPException(status_code=404, detail="Campaign not found")
     questions = (
         db.query(CampaignQuestion)
+        .options(selectinload(CampaignQuestion.options))
         .filter(CampaignQuestion.campaign_id == campaign.id)
         .order_by(CampaignQuestion.order_index)
         .all()
@@ -150,7 +179,7 @@ async def view_form(token: str, request: Request, db: Session = Depends(get_db))
     skip_q_order = None
     skip_values: list[str] = []
     skip_mode = "allow"
-    rule = campaign.skip_logic or SKIP_FLOW_RULES.get(campaign.code)
+    rule = _campaign_skip_rule(campaign)
     if rule:
         target_order = rule.get("question_order")
         skip_mode = rule.get("mode", "allow")
@@ -167,7 +196,6 @@ async def view_form(token: str, request: Request, db: Session = Depends(get_db))
                             if val in values_set or text in values_set:
                                 skip_values.append(opt.option_value)
                     break
-    db.commit()
     return templates.TemplateResponse(
         "feedback/form.html",
         {
@@ -198,6 +226,7 @@ async def submit_form(token: str, request: Request, db: Session = Depends(get_db
         raise HTTPException(status_code=404, detail="Campaign not found")
     questions = (
         db.query(CampaignQuestion)
+        .options(selectinload(CampaignQuestion.options))
         .filter(CampaignQuestion.campaign_id == campaign.id)
         .order_by(CampaignQuestion.order_index)
         .all()
@@ -210,7 +239,7 @@ async def submit_form(token: str, request: Request, db: Session = Depends(get_db
     skip_q_order = None
     skip_values: list[str] = []
     skip_mode = "allow"
-    rule = campaign.skip_logic or SKIP_FLOW_RULES.get(campaign.code)
+    rule = _campaign_skip_rule(campaign)
     if rule:
         target_order = rule.get("question_order")
         skip_mode = rule.get("mode", "allow")
@@ -275,11 +304,9 @@ async def submit_form(token: str, request: Request, db: Session = Depends(get_db
         pii_data_json=pii_data,
     )
     db.add(response)
-    db.commit()
-    db.refresh(response)
+    db.flush()
 
     answers = []
-    questions = db.query(CampaignQuestion).filter(CampaignQuestion.campaign_id == campaign.id).all()
     for question in questions:
         key = f"q_{question.id}"
         if question.question_type == "mcq_multi":
@@ -333,13 +360,13 @@ async def submit_form(token: str, request: Request, db: Session = Depends(get_db
         )
         db.add(ans)
         answers.append(ans)
-    db.commit()
+    db.flush()
 
     compute_scores(response, answers, campaign.code if campaign else None)
+    create_ticket_if_needed(db, response, commit=False)
     db.commit()
-    create_ticket_if_needed(db, response)
     try:
-        _mark_booking_responses_submitted(db, mobile_number)
+        _mark_booking_responses_submitted(db, mobile_number, lab_id)
         db.commit()
     except Exception as exc:
         db.rollback()
@@ -349,6 +376,3 @@ async def submit_form(token: str, request: Request, db: Session = Depends(get_db
         "feedback/thank_you.html",
         {"request": request, "campaign": campaign, "response": response},
     )
-
-
-from app.models import CampaignQuestionOption  # noqa: E402  keep import local to avoid circular

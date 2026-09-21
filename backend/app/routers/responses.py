@@ -2,6 +2,8 @@ import ast
 import csv
 import io
 import json
+import math
+from urllib.parse import urlencode
 
 from datetime import datetime, timedelta
 
@@ -9,10 +11,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, text
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.database import get_db
-from app.models import Campaign, CampaignQuestion, FeedbackResponse
+from app.models import Campaign, CampaignQuestion, FeedbackAnswer, FeedbackResponse
 from app.routers.auth import get_current_user
 from app.services.feedback import create_ticket_if_needed
 import pytz
@@ -84,6 +86,8 @@ async def list_responses(
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
     status: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=10, le=200),
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
@@ -115,7 +119,17 @@ async def list_responses(
             pass
     if status:
         query = query.filter(FeedbackResponse.status == status)
-    responses = query.order_by(FeedbackResponse.submission_time.desc()).all()
+    total = query.count()
+    total_pages = max(math.ceil(total / per_page), 1)
+    if page > total_pages:
+        page = total_pages
+    responses = (
+        query.options(joinedload(FeedbackResponse.campaign))
+        .order_by(FeedbackResponse.submission_time.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+        .all()
+    )
     campaigns_query = db.query(Campaign)
     if active_scope == "special":
         campaigns_query = campaigns_query.filter(func.lower(Campaign.code).in_(SPECIAL_CAMPAIGN_CODES))
@@ -124,6 +138,16 @@ async def list_responses(
             (Campaign.code.is_(None)) | (~func.lower(Campaign.code).in_(SPECIAL_CAMPAIGN_CODES))
         )
     campaigns = campaigns_query.order_by(Campaign.name).all()
+    pagination_params = {
+        "scope": active_scope,
+        "q": q or "",
+        "start_date": start_date or "",
+        "end_date": end_date or "",
+        "campaign_id": campaign_id or "",
+        "status": status or "",
+        "per_page": per_page,
+    }
+    pagination_query = urlencode({k: v for k, v in pagination_params.items() if v != ""})
     return templates.TemplateResponse(
         "responses/list.html",
         {
@@ -136,6 +160,11 @@ async def list_responses(
             "start_date": start_date or "",
             "end_date": end_date or "",
             "status": status or "",
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+            "total_pages": total_pages,
+            "pagination_query": pagination_query,
             "user": user,
         },
     )
@@ -201,14 +230,15 @@ async def export_responses(
     else:
         query = _base_response_query(db, active_scope, campaign_id_val, q, start_date, end_date, status)
 
-    rows = query.order_by(FeedbackResponse.submission_time.desc()).all()
-
     # Preload questions + option labels for friendly export and per-question columns
-    question_ids: set[int] = set()
-    for r in rows:
-        if r.answers:
-            question_ids.update([a.campaign_question_id for a in r.answers])
-    qmap: dict[int, CampaignQuestion] = {}
+    response_ids_subq = query.with_entities(FeedbackResponse.id).subquery()
+    question_ids = {
+        row[0]
+        for row in db.query(FeedbackAnswer.campaign_question_id)
+        .filter(FeedbackAnswer.response_id.in_(response_ids_subq))
+        .distinct()
+        .all()
+    }
     option_labels: dict[int, dict[str, str]] = {}
     ordered_questions: list[CampaignQuestion] = []
     if question_ids:
@@ -227,107 +257,97 @@ async def export_responses(
         )
         ordered_questions = qs_sorted
         for q in qs_sorted:
-            qmap[q.id] = q
             opt_map: dict[str, str] = {}
             if q.options:
                 for opt in q.options:
                     if opt.option_value is not None:
-                        opt_map[str(opt.option_value)] = opt.option_text_en or opt.option_text or str(opt.option_value)
+                        opt_map[str(opt.option_value)] = opt.option_text_en or opt.option_text_hi or str(opt.option_value)
             option_labels[q.id] = opt_map
 
-    output = io.StringIO()
-    # Write BOM so Excel opens UTF-8 correctly
-    output.write("\ufeff")
-    writer = csv.writer(output)
     question_headers = []
     for q in ordered_questions:
-        base = q.question_text_en or q.question_text or ""
+        base = q.question_text_en or q.question_text_hi or ""
         base = base.replace("\n", " ").replace("\r", " ").strip()
         base = _normalize_ascii(base)
         prefix = f"Q{q.order_index or q.id}"
         header = f"{prefix} - {base}" if base else prefix
         question_headers.append(header)
 
-    writer.writerow(
-        [
-            "id",
-            "campaign",
-            "name",
-            "mobile",
-            "lab_id",
-            "status",
-            "submitted_at",
-        ]
-        + question_headers
-    )
-    for r in rows:
-        pii = r.pii_data_json or {}
-        mobile = pii.get("contact") or f"{pii.get('mobile_country','')}{pii.get('mobile_number','')}"
-        answers_pretty = []
-        if r.answers:
-            for a in r.answers:
-                q = qmap.get(a.campaign_question_id)
-                q_text = ""
-                if q:
-                    q_text = q.question_text_en or q.question_text or ""
-                val = a.answer_text
-                if not val:
-                    raw = a.selected_option_values
-                    if isinstance(raw, list):
-                        mapped = []
-                        for x in raw:
-                            sx = str(x)
-                            mapped.append(option_labels.get(a.campaign_question_id, {}).get(sx, sx))
-                        val = ", ".join(mapped)
-                    elif raw is not None:
-                        sx = str(raw)
-                        val = option_labels.get(a.campaign_question_id, {}).get(sx, sx)
-                answers_pretty.append({"question": q_text, "answer": val or ""})
-        answers_text = "\n".join(
-            [f"{item.get('question','')}: {item.get('answer','')}" for item in answers_pretty]
-        )
-        # Per-question answers in same order as headers
-        per_q_answers: list[str] = []
-        if ordered_questions:
-            ans_map = {}
-            if r.answers:
-                for a in r.answers:
-                    ans_map[a.campaign_question_id] = a
-            for q in ordered_questions:
-                val = ""
-                a = ans_map.get(q.id)
-                if a:
-                    val = a.answer_text or ""
-                    if not val:
-                        raw = a.selected_option_values
-                        if isinstance(raw, list):
-                            mapped = []
-                            for x in raw:
-                                sx = str(x)
-                                mapped.append(option_labels.get(q.id, {}).get(sx, sx))
-                            val = ", ".join(mapped)
-                        elif raw is not None:
-                            sx = str(raw)
-                            val = option_labels.get(q.id, {}).get(sx, sx)
-                per_q_answers.append(_normalize_ascii(val) if val else "")
+    def csv_rows():
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
 
-        writer.writerow(
+        def emit(row: list[object]):
+            buffer.seek(0)
+            buffer.truncate(0)
+            writer.writerow(row)
+            return buffer.getvalue()
+
+        # Write BOM so Excel opens UTF-8 correctly.
+        yield "\ufeff"
+        yield emit(
             [
-                r.id,
-                r.campaign.name if r.campaign else "",
-                pii.get("name", ""),
-                mobile,
-                pii.get("lab_id", ""),
-                r.status,
-                local_time(r.submission_time),
+                "id",
+                "campaign",
+                "name",
+                "mobile",
+                "lab_id",
+                "status",
+                "submitted_at",
             ]
-            + per_q_answers
+            + question_headers
         )
 
-    output.seek(0)
+        rows = (
+            query.options(
+                joinedload(FeedbackResponse.campaign),
+                selectinload(FeedbackResponse.answers),
+            )
+            .order_by(FeedbackResponse.submission_time.desc())
+            .yield_per(200)
+        )
+        for r in rows:
+            pii = r.pii_data_json or {}
+            mobile = pii.get("contact") or f"{pii.get('mobile_country','')}{pii.get('mobile_number','')}"
+            per_q_answers: list[str] = []
+            if r.answers:
+                ans_map = {a.campaign_question_id: a for a in r.answers}
+                for q in ordered_questions:
+                    val = ""
+                    a = ans_map.get(q.id)
+                    if a:
+                        val = a.answer_text or ""
+                        if not val:
+                            raw = a.selected_option_values
+                            if isinstance(raw, list):
+                                mapped = []
+                                for x in raw:
+                                    sx = str(x)
+                                    mapped.append(option_labels.get(q.id, {}).get(sx, sx))
+                                val = ", ".join(mapped)
+                            elif raw is not None:
+                                sx = str(raw)
+                                val = option_labels.get(q.id, {}).get(sx, sx)
+                    per_q_answers.append(_normalize_ascii(val) if val else "")
+            else:
+                per_q_answers = [""] * len(ordered_questions)
+
+            yield emit(
+                [
+                    r.id,
+                    r.campaign.name if r.campaign else "",
+                    pii.get("name", ""),
+                    mobile,
+                    pii.get("lab_id", ""),
+                    r.status,
+                    local_time(r.submission_time),
+                ]
+                + per_q_answers
+            )
+
     filename = f"responses_export_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
     return StreamingResponse(
-        output,
+        csv_rows(),
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
@@ -347,7 +367,10 @@ async def bookings_status(
     base_query = "WHERE 1=1"
     params: dict[str, object] = {}
     if q:
-        base_query += " AND (b.bookingid LIKE :q OR b.customername LIKE :q OR b.mobile LIKE :q)"
+        base_query += (
+            " AND (b.bookingid LIKE :q OR b.booking_code LIKE :q "
+            "OR b.customername LIKE :q OR b.mobile LIKE :q)"
+        )
         params["q"] = f"%{q.strip()}%"
     if start_date:
         base_query += " AND b.enterdate >= :start_date"
@@ -357,26 +380,26 @@ async def bookings_status(
         params["end_date"] = end_date
     count = db.execute(text(f"SELECT COUNT(*) AS total FROM bookings b {base_query}"), params).scalar() or 0
     offset = (page - 1) * per_page
-    rows = db.execute(
+    booking_rows = db.execute(
         text(
             f"""
             SELECT
                 b.bookingid,
+                b.booking_code,
                 b.customername,
                 b.mobile,
+                b.age_years,
+                b.preferred_time_slot,
+                b.panel_company,
+                b.booking_status,
+                b.payment_mode,
+                b.no_of_pricks,
+                b.start_time,
+                b.assigned_phlebotomist_id,
+                b.assigned_phlebotomist_name,
                 b.isCampaingsend,
-                b.isResponseSubmitted,
-                r.id AS response_id
+                b.isResponseSubmitted
             FROM bookings b
-            LEFT JOIN (
-                SELECT
-                    MAX(id) AS id,
-                    JSON_UNQUOTE(JSON_EXTRACT(pii_data_json, '$.lab_id')) AS lab_id
-                FROM feedback_responses
-                WHERE JSON_EXTRACT(pii_data_json, '$.lab_id') IS NOT NULL
-                GROUP BY lab_id
-            ) r
-                ON r.lab_id = CAST(b.bookingid AS CHAR)
             {base_query}
             ORDER BY b.bookingid DESC
             LIMIT :limit OFFSET :offset
@@ -384,6 +407,29 @@ async def bookings_status(
         ),
         {**params, "limit": per_page, "offset": offset},
     ).mappings().all()
+    rows = [dict(row) for row in booking_rows]
+    lab_ids = [str(row["bookingid"]) for row in rows if row.get("bookingid") is not None]
+    response_ids_by_lab: dict[str, int] = {}
+    if lab_ids:
+        lab_params = {f"lab_id_{idx}": lab_id for idx, lab_id in enumerate(lab_ids)}
+        placeholders = ", ".join(f":{key}" for key in lab_params)
+        response_rows = db.execute(
+            text(
+                f"""
+                SELECT
+                    MAX(id) AS id,
+                    JSON_UNQUOTE(JSON_EXTRACT(pii_data_json, '$.lab_id')) AS lab_id
+                FROM feedback_responses
+                WHERE JSON_UNQUOTE(JSON_EXTRACT(pii_data_json, '$.lab_id')) IN ({placeholders})
+                GROUP BY lab_id
+                """
+            ),
+            lab_params,
+        ).mappings().all()
+        response_ids_by_lab = {str(row["lab_id"]): row["id"] for row in response_rows if row["lab_id"] is not None}
+    for row in rows:
+        row["response_id"] = response_ids_by_lab.get(str(row["bookingid"]))
+
     totals = db.execute(
         text(
             """
@@ -419,9 +465,48 @@ async def response_detail(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    response = db.query(FeedbackResponse).get(response_id)
+    response = (
+        db.query(FeedbackResponse)
+        .options(
+            joinedload(FeedbackResponse.campaign),
+            selectinload(FeedbackResponse.answers)
+            .joinedload(FeedbackAnswer.question)
+            .selectinload(CampaignQuestion.options),
+        )
+        .filter(FeedbackResponse.id == response_id)
+        .first()
+    )
     if not response:
         raise HTTPException(status_code=404, detail="Response not found")
+
+    booking = None
+    pii = response.pii_data_json or {}
+    lab_id = str(pii.get("lab_id") or "").strip()
+    if lab_id.isdigit():
+        booking_row = db.execute(
+            text(
+                """
+                SELECT
+                    bookingid,
+                    booking_code,
+                    start_time,
+                    age_years,
+                    preferred_time_slot,
+                    panel_company,
+                    booking_status,
+                    payment_mode,
+                    no_of_pricks,
+                    assigned_phlebotomist_id,
+                    assigned_phlebotomist_name
+                FROM bookings
+                WHERE bookingid = :bookingid
+                LIMIT 1
+                """
+            ),
+            {"bookingid": int(lab_id)},
+        ).mappings().first()
+        booking = dict(booking_row) if booking_row else None
+
     answer_labels: dict[int, list[str]] = {}
     for answer in response.answers:
         raw = answer.selected_option_values
@@ -477,7 +562,13 @@ async def response_detail(
             answer_labels[answer.id] = labels
     return templates.TemplateResponse(
         "responses/detail.html",
-        {"request": request, "response": response, "answer_labels": answer_labels, "user": user},
+        {
+            "request": request,
+            "response": response,
+            "booking": booking,
+            "answer_labels": answer_labels,
+            "user": user,
+        },
     )
 
 

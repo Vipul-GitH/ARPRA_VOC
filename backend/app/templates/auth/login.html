@@ -35,8 +35,12 @@
         {% endif %}
         <form method="post" action="/auth/login" class="space-y-4">
             <div>
-                <label class="block text-sm font-semibold text-gray-700">Username</label>
-                <input type="text" name="username" class="w-full border border-gray-300 rounded px-3 py-2 focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary)]/20" required>
+                <label class="block text-sm font-semibold text-gray-700">Name</label>
+                <div class="relative">
+                    <input type="text" name="username" id="user-name" autocomplete="off" class="w-full border border-gray-300 rounded px-3 py-2 focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary)]/20" required>
+                    <input type="hidden" name="external_user_id" id="external-user-id">
+                    <div id="user-suggestions" class="hidden absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded shadow-lg max-h-60 overflow-y-auto"></div>
+                </div>
             </div>
             <div>
                 <label class="block text-sm font-semibold text-gray-700">Password</label>
@@ -44,7 +48,68 @@
             </div>
             <button type="submit" class="w-full py-2.5 rounded-lg text-white font-semibold shadow-md" style="background: linear-gradient(90deg, var(--primary), var(--accent));">Sign in</button>
         </form>
-        <p class="text-xs text-gray-500 mt-4 text-center">Use your VoC credentials to continue.</p>
+        <p class="text-xs text-gray-500 mt-4 text-center">Use your date of birth as password without /.</p>
     </div>
+    <script>
+        (function () {
+            const input = document.getElementById('user-name');
+            const selectedId = document.getElementById('external-user-id');
+            const suggestions = document.getElementById('user-suggestions');
+            let timer;
+
+            function closeSuggestions() {
+                suggestions.classList.add('hidden');
+                suggestions.replaceChildren();
+            }
+
+            input.addEventListener('input', function () {
+                selectedId.value = '';
+                clearTimeout(timer);
+                const query = input.value.trim();
+                if (query.length < 2) {
+                    closeSuggestions();
+                    return;
+                }
+                timer = setTimeout(async function () {
+                    try {
+                        const response = await fetch('/auth/external-users?q=' + encodeURIComponent(query));
+                        if (!response.ok) throw new Error('Lookup failed');
+                        const users = await response.json();
+                        suggestions.replaceChildren();
+                        users.forEach(function (user) {
+                            const button = document.createElement('button');
+                            button.type = 'button';
+                            button.className = 'block w-full px-3 py-2 text-left hover:bg-gray-100';
+
+                            const name = document.createElement('span');
+                            name.className = 'block text-sm font-medium text-gray-900';
+                            name.textContent = user.name;
+                            button.appendChild(name);
+
+                            if (user.designation) {
+                                const designation = document.createElement('span');
+                                designation.className = 'block text-xs text-gray-500';
+                                designation.textContent = user.designation;
+                                button.appendChild(designation);
+                            }
+                            button.addEventListener('click', function () {
+                                input.value = user.name;
+                                selectedId.value = user.id;
+                                closeSuggestions();
+                            });
+                            suggestions.appendChild(button);
+                        });
+                        suggestions.classList.toggle('hidden', users.length === 0);
+                    } catch (_error) {
+                        closeSuggestions();
+                    }
+                }, 250);
+            });
+
+            document.addEventListener('click', function (event) {
+                if (!suggestions.contains(event.target) && event.target !== input) closeSuggestions();
+            });
+        })();
+    </script>
 </body>
 </html>
